@@ -111,3 +111,74 @@ graphical.target @6.196s
       └─remote-fs-pre.target @6.116s
 
 ```
+
+```mermaid
+graph TD
+    %% Define Styles
+    classDef hardware fill:#0f4c5c,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef kernel fill:#e36414,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef systemd fill:#fb8b24,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef process fill:#9a031e,stroke:#fff,stroke-width:2px,color:#fff;
+
+    subgraph Hardware and Bootloader
+        A[Power On / POST]:::hardware --> B[BIOS / UEFI]:::hardware
+        B --> C[Bootloader GRUB]:::hardware
+    end
+
+    subgraph Linux Kernel Init
+        C --> D[Load Kernel & initramfs]:::kernel
+        D --> E[Kernel Decompression]:::kernel
+        E --> F[Hardware Discovery & Drivers]:::kernel
+        F --> G[Mount Root Filesystem]:::kernel
+    end
+
+    subgraph Systemd Initialization PID 1
+        G --> H[Start Systemd PID 1]:::systemd
+        H --> I[Parse Configuration & Unit Files]:::systemd
+        I --> J[Enter Default Target e.g. graphical.target]:::systemd
+        J --> K[Initialize System Services e.g., sshd, NetworkManager]:::systemd
+    end
+
+    subgraph Child Processes and User Space
+        K --> L[Spawning User/Application Processes]:::process
+        L --> M[Child Process - e.g., login session bash]:::process
+        L --> N[Child Process - e.g., background daemon]:::process
+    end
+
+    class A,B,C hardware;
+    class D,E,F,G kernel;
+    class H,I,J,K systemd;
+    class L,M,N process;
+
+```
+
+### Troubleshoot Startup
+
+```mermaid
+flowchart TD
+    A[System Crashed / Hung at Startup] --> B{Can you reach GRUB?}
+    
+    B -- No --> C[Firmware / Hardware Issue]
+    C --> C1[Check hardware, cables, and CMOS/BIOS settings]
+    C --> C2[Boot from a Live USB https://www.linuxteck.com/fix-systemd-service-errors-complete-guide/ and check hardware]
+    
+    B -- Yes --> D[Access GRUB Menu]
+    D --> E[Edit boot parameters]
+    E --> F[Remove 'quiet' and 'splash' <br/> Add 'systemd.log_level=debug systemd.log_target=kmsg']
+    
+    F --> G{Where does it crash?}
+    
+    G -- "During Kernel/Initramfs (Before PID 1)" --> H[Kernel or Hardware Panic]
+    H --> H1[Analyze kernel messages with 'dmesg']
+    H --> H2[Boot an older LTS or previous kernel from GRUB]
+    
+    G -- "During systemd Initialization (Hang / Services Failed)" --> I[Systemd Boot Failure]
+    I --> I1[Boot into Rescue or Emergency mode]
+    I --> I2[View previous boot logs using `journalctl -b -1 -p err`]
+    I --> I3[Check specific service status using `systemctl status <service_name>`]
+    
+    I2 --> J{Identify Failing Service}
+    J --> J1[Mask problematic service: `systemctl mask <service_name>`]
+    J --> J2[Fix service dependencies or configs in `/etc/systemd/system/`]
+    J --> J3[Reload systemd daemon: `systemctl daemon-reload`]
+```
