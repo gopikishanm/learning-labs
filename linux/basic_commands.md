@@ -30,9 +30,29 @@ tree
 tree -d # Directories only
 tree -a # Include hidden files
 
+# LVM and Disks
+
+lsblk # List block devices in tree format
+sudo fdisk -l # Low level physical partition tables for all connected drives
+df -h # Mounted filesystems, total capacity, current disk usage
+
+sudo pvs # High level summary of physical volumes
+sudo pvdisplay # Detailed attributes
+sudo pvscan # Scan all disks for existing physical volumes
+
+sudo vgs # Summary of volume groups, free space and assigned PV's
+sudo vgdisplay # Detailed attributes of volume groups
+sudo vgscan # Scan all volume groups
+
+sudo lvs # Summary of logical volumes
+sudo lvdisplay # Detailed attributes of logical volumes
+sudo lvscan # Scan all logical volumes
+
+
 # TO DO
 # - File Operations
 # - Check networks
 # - Process Management@
+
 
 ```
