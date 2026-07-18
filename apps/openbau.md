@@ -106,6 +106,88 @@ $ bao secrets enable -path=ssh-client-signer ssh
 Success! Enabled the ssh secrets engine at: ssh-client-signer/
 ```
 
+When the VM is restarted the service status is stopped. To start openbao on startup, below steps are followed
 
+```sh
+$ apk add openbao-openrc
 
-The next step is to setup signed ssh certificates - https://openbao.org/docs/secrets/ssh/signed-ssh-certificates/
+$ rc-update add openbao default
+ * service openbao added to runlevel default
+
+$ rc-service openbao start
+ * WARNING: openbao has already been started
+```
+
+After rebooting the VM, openbao is started at startup. Another note is that we have to set `BAO_ADDR` env variable before performing any bao checks
+
+```sh
+
+$ bao write ssh-client-signer/config/ca generate_signing_key=true
+Key            Value
+---            -----
+issuer_id      c967d296-b34e-41a2
+issuer_name    n/a
+public_key     ssh-rsa
+
+$ curl -o /etc/ssh/trusted-user-ca-keys.pem http://127.0.0.1:8200/v1/ssh-client-signer/public_key
+
+$ cat /etc/ssh/trusted-user-ca-keys.pem
+
+ssh-rsa AAA
+
+$ bao read -field=public_key ssh-client-signer/config/ca > /etc/ssh/trusted-user-ca-keys.pem
+
+$ vi /etc/ssh/sshd_config
+ 
+$ cat /etc/ssh/sshd_config | grep TrustedUserCAKeys
+TrustedUserCAKeys /etc/ssh/trusted-user-ca-keys.pem
+
+$ rc-service sshd restart
+
+$ bao write ssh-client-signer/roles/signing-role -<<"EOH"
+{
+  "algorithm_signer": "rsa-sha2-256",
+  "allow_user_certificates": true,
+  "allowed_users": "*",
+  "allowed_extensions": "permit-pty,permit-port-forwarding",
+  "default_extensions": {
+    "permit-pty": ""
+  },
+  "key_type": "ca",
+  "default_user": "gopi",
+  "ttl": "30m0s"
+}
+EOH
+
+# Success! Data written to: ssh-client-signer/roles/signing-role
+
+$ ssh-keygen -t rsa -C "gopi@test.com"
+
+$ bao write ssh-client-signer/sign/signing-role public_key=@$HOME/.ssh/id_rsa.pub
+
+$ bao write -field=signed_key ssh-client-signer/sign/signing-role public_key=@$HOME/.ssh/id_rsa.pub > signed-cert.pub
+
+$ ssh-keygen -Lf signed-cert.pub
+
+Type: ssh-rsa-cert-v01@openssh.com user certificate
+Public key: RSA-CERT SHA256:DsqFB59m/D1IqBYhGq2ZKEfH5fb6jQ
+Signing CA: RSA SHA256:NJ/PxuqRuN7Z8jjOKhljC8ZJUkGg (using rsa-sha2-256)
+Key ID: "vault-root-0eca850797d4b1e630a158846ab664a11f1f97dbea34"
+Serial: 16920489170949
+Valid: from 2026-07-18T18:44:14 to 2026-07-18T19:14:44
+Principals:
+        alpine
+Critical Options: (none)
+Extensions:
+        permit-pty
+
+```
+
+### Learning
+
+- Openbao starts in sealed manner everytime the VM gets restarted
+- Openbao service is exposed internally on port 8200 on localhost
+
+### Reference
+
+- [Signed SSH Certificates](https://openbao.org/docs/secrets/ssh/signed-ssh-certificates/)
