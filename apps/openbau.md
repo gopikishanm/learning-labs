@@ -188,6 +188,11 @@ Extensions:
 - Openbao starts in sealed manner everytime the VM gets restarted
 - Openbao service is exposed internally on port 8200 on localhost
 
+### TODO
+
+How to expose openbao setup in alpine externally and allow traffic from specific subnet
+
+
 ### Reference
 
 - [Signed SSH Certificates](https://openbao.org/docs/secrets/ssh/signed-ssh-certificates/)
