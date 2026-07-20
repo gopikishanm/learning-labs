@@ -102,12 +102,19 @@ else
 fi
 
 # Resize the disk to the desired size
-log "Resizing disk to 20G..."
-qm disk resize "$VM_TEMPLATE_ID" scsi0 20G || warn "Disk resize failed. You may need to resize manually."
+log "Resizing disk to 30G..."
+qm disk resize "$VM_TEMPLATE_ID" scsi0 30G || warn "Disk resize failed. You may need to resize manually."
+
+# Set cloud-init drive
+log "Adding cloud-init drive..."
+qm set "$VM_TEMPLATE_ID" --ide2 "$PROXMOX_STORAGE":cloudinit
 
 # Set boot order to boot from disk first (prevents PXE/network boot)
 log "Setting boot order to disk first..."
 qm set "$VM_TEMPLATE_ID" --boot order=scsi0 || error "Failed to set boot order"
+
+# Enable QEMU Guest Agent
+qm set "$VM_TEMPLATE_ID" --agent enabled=1
 
 # Set serial and VGA settings
 log "Setting up serial and VGA configurations..."
@@ -122,6 +129,7 @@ qm set "$VM_TEMPLATE_ID" --ciuser ubuntu || error "Failed to configure cloud-ini
 qm set "$VM_TEMPLATE_ID" --cipassword "ubuntu" || error "Failed to configure cloud-init password"
 
 # Use the generated SSH key for VM access
+# Use scp -r to copy the public key to the VM's cloud-init configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SSH_KEY_PATH="$SCRIPT_DIR/ssh-keys/k3s-cluster.pub"
 if [ -f "$SSH_KEY_PATH" ]; then
@@ -135,6 +143,9 @@ fi
 log "Setting search domain and nameserver..."
 qm set "$VM_TEMPLATE_ID" --searchdomain "localdomain" || error "Failed to configure search domain"
 qm set "$VM_TEMPLATE_ID" --nameserver "8.8.8.8" || error "Failed to configure nameserver"
+
+# Bake the initial Cloud-Init settings
+qm cloudinit update "$VM_TEMPLATE_ID" || error "Failed to update cloud-init configuration"
 
 # Convert to template
 log "Converting VM to template..."
