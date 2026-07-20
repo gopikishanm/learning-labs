@@ -23,6 +23,13 @@ Before proceeding, please specify the following details for each node:
 
 These specifications will be used to configure the Proxmox templates and VMs appropriately.
 
+### SSH Access
+- SSH key pair is generated in `kubernetes/ssh-keys/k3s-cluster` (private) and `k3s-cluster.pub` (public)
+- Login user: `ubuntu`
+- Login via SSH key: `ssh -i kubernetes/ssh-keys/k3s-cluster ubuntu@<VM_IP>`
+- Fallback password: `ubuntu` (set via cloud-init)
+- The `ssh-keys/` directory is in `.gitignore` and will NOT be committed to version control
+
 ## Phase 1: Proxmox Base Template Creation
 
 ### 1. Download Ubuntu 24.04 LTS Cloud Image
@@ -41,12 +48,13 @@ qm importdisk 9000 ubuntu-24.04-server-cloudimg-amd64.img local-lvm
 
 # Attach the imported disk and configure
 qm set 9000 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-9000-disk-0
+qm set 9000 --boot order=scsi0
 qm set 9000 --serial0 socket --vga serial0
 
 # Configure cloud-init for the base template
-qm set 9000 --ipconfig0 ip=dhcp
 qm set 9000 --ciuser ubuntu
-qm set 9000 --sshkeys "/path/to/public/ssh/key"
+qm set 9000 --cipassword "ubuntu"
+qm set 9000 --sshkeys "kubernetes/ssh-keys/k3s-cluster.pub"
 qm set 9000 --searchdomain "localdomain"
 qm set 9000 --nameserver "8.8.8.8"
 
@@ -59,6 +67,10 @@ qm template 9000
 # Create Control Plane nodes (3)
 # Based on assigned IP addresses and node requirements:
 # Using descriptive VM IDs for better organization
+
+# IMPORTANT: The template does NOT have --ipconfig0 set (no DHCP).
+# You MUST set a static IP on each clone before first boot.
+# Login with user 'ubuntu' and SSH key (ssh-keys/k3s-cluster) or password 'ubuntu'.
 
 # Clone and assign IP for each VM before starting it
 # Note: --net0 is inherited from the template, not needed on clone

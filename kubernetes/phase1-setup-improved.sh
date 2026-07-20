@@ -105,22 +105,30 @@ fi
 log "Resizing disk to 20G..."
 qm disk resize "$VM_TEMPLATE_ID" scsi0 20G || warn "Disk resize failed. You may need to resize manually."
 
+# Set boot order to boot from disk first (prevents PXE/network boot)
+log "Setting boot order to disk first..."
+qm set "$VM_TEMPLATE_ID" --boot order=scsi0 || error "Failed to set boot order"
+
 # Set serial and VGA settings
 log "Setting up serial and VGA configurations..."
 qm set "$VM_TEMPLATE_ID" --serial0 socket --vga serial0 || error "Failed to configure serial/VGA"
 
 # Configure cloud-init for the base template
 log "Configuring cloud-init settings..."
-qm set "$VM_TEMPLATE_ID" --ipconfig0 ip=dhcp || error "Failed to configure IP settings"
+# NOTE: Do NOT set --ipconfig0 on the template. Clones inherit this setting
+# and will pick up a random DHCP IP before the static IP override takes effect.
+# Instead, set static IPs on each clone individually using qm set.
 qm set "$VM_TEMPLATE_ID" --ciuser ubuntu || error "Failed to configure cloud-init user"
+qm set "$VM_TEMPLATE_ID" --cipassword "ubuntu" || error "Failed to configure cloud-init password"
 
-# For security, you should provide your SSH key path here
-SSH_KEY_PATH="/path/to/public/ssh/key"
+# Use the generated SSH key for VM access
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SSH_KEY_PATH="$SCRIPT_DIR/ssh-keys/k3s-cluster.pub"
 if [ -f "$SSH_KEY_PATH" ]; then
     qm set "$VM_TEMPLATE_ID" --sshkeys "$SSH_KEY_PATH" || error "Failed to configure SSH keys"
     log "SSH keys configured from $SSH_KEY_PATH"
 else
-    warn "SSH key not found at $SSH_KEY_PATH. You'll need to set this up manually."
+    error "SSH key not found at $SSH_KEY_PATH. Run 'ssh-keygen' first or check the path."
 fi
 
 # Set additional network and domain settings
@@ -143,6 +151,13 @@ echo "3. Proceed to Phase 2: Host OS Preparation"
 echo ""
 echo -e "${BLUE}Instructions:${NC}"
 echo "To create VMs from the template, use commands like:"
+echo ""
+echo "IMPORTANT:"
+echo "  - The template does NOT have --ipconfig0 set (no DHCP)"
+echo "  - You MUST set a static IP on each clone before first boot"
+echo "  - Login with user 'ubuntu' using either:"
+echo "    a) SSH key: ssh -i ssh-keys/k3s-cluster ubuntu@<VM_IP>"
+echo "    b) Password: ubuntu (set via --cipassword during template creation)"
 echo ""
 echo "--- Control Plane Nodes ---"
 echo "qm clone $VM_TEMPLATE_ID {CP_VM_ID_1} --name k3s-cp-1"

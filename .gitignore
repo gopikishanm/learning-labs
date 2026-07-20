@@ -1,1 +1,4 @@
 _out/
+
+# Kubernetes cluster SSH keys (used for VM access)
+kubernetes/ssh-keys/
