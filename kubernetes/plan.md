@@ -33,14 +33,14 @@ wget https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-
 
 ### 2. Create Base Template in Proxmox
 ```bash
-# Import the image to Proxmox storage (assuming local-lvm)
-qm importdisk 0 ubuntu-24.04-server-cloudimg-amd64.img local-lvm
-
-# Create a base VM template
-# Based on node requirements, adjust memory and CPU cores accordingly:
-# For example, if each control plane node requires 4GB RAM and 2 CPUs:
+# Create a base VM template first, then import the disk
 qm create 9000 --name k3s-base-ubuntu2404 --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0
-qm set 9000 --disk 0,ssd=1,size=20G
+
+# Import the image to Proxmox storage (assuming local-lvm)
+qm importdisk 9000 ubuntu-24.04-server-cloudimg-amd64.img local-lvm
+
+# Attach the imported disk and configure
+qm set 9000 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-9000-disk-0
 qm set 9000 --serial0 socket --vga serial0
 
 # Configure cloud-init for the base template
@@ -59,17 +59,30 @@ qm template 9000
 # Create Control Plane nodes (3)
 # Based on assigned IP addresses and node requirements:
 # Using descriptive VM IDs for better organization
-qm clone 9000 {CP_VM_ID_1} --name k3s-cp-1 --net0 virtio,bridge=vmbr0
-qm clone 9000 {CP_VM_ID_2} --name k3s-cp-2 --net0 virtio,bridge=vmbr0
-qm clone 9000 {CP_VM_ID_3} --name k3s-cp-3 --net0 virtio,bridge=vmbr0
+
+# Clone and assign IP for each VM before starting it
+# Note: --net0 is inherited from the template, not needed on clone
+qm clone 9000 {CP_VM_ID_1} --name k3s-cp-1
+qm set {CP_VM_ID_1} --ipconfig0 ip={CP_NODE_1_IP}/24,gw={GATEWAY_IP}
+qm start {CP_VM_ID_1}
+
+qm clone 9000 {CP_VM_ID_2} --name k3s-cp-2
+qm set {CP_VM_ID_2} --ipconfig0 ip={CP_NODE_2_IP}/24,gw={GATEWAY_IP}
+qm start {CP_VM_ID_2}
+
+qm clone 9000 {CP_VM_ID_3} --name k3s-cp-3
+qm set {CP_VM_ID_3} --ipconfig0 ip={CP_NODE_3_IP}/24,gw={GATEWAY_IP}
+qm start {CP_VM_ID_3}
 
 # Create Worker node (1)
-# Based on assigned IP addresses and node requirements:
-qm clone 9000 {WORKER_VM_ID_1} --name k3s-worker-1 --net0 virtio,bridge=vmbr0
+qm clone 9000 {WORKER_VM_ID_1} --name k3s-worker-1
+qm set {WORKER_VM_ID_1} --ipconfig0 ip={WORKER_NODE_IP}/24,gw={GATEWAY_IP}
+qm start {WORKER_VM_ID_1}
 
 # Create Load Balancer node (1)
-# Based on assigned IP addresses and node requirements:
-qm clone 9000 {LB_VM_ID_1} --name k3s-lb-1 --net0 virtio,bridge=vmbr0
+qm clone 9000 {LB_VM_ID_1} --name k3s-lb-1
+qm set {LB_VM_ID_1} --ipconfig0 ip={LB_NODE_IP}/24,gw={GATEWAY_IP}
+qm start {LB_VM_ID_1}
 ```
 
 ## Phase 2: Host OS Preparation
