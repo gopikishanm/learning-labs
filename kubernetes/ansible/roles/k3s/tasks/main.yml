@@ -1,0 +1,65 @@
+---
+- name: Create k3s directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - /etc/rancher/k3s
+    - /root/.kube
+
+- name: Install k3s on first control plane node (cluster-init)
+  shell: >
+    curl -sfL https://get.k3s.io |
+    K3S_TOKEN={{ k3s_token }}
+    sh -s - --cluster-init
+    --server https://{{ load_balancer_vip }}:6443
+    --write-kubeconfig /root/.kube/config
+    --node-name {{ ansible_hostname }}
+    --flannel-backend=none
+    --disable-network-policy
+  args:
+    creates: /etc/rancher/k3s/token
+  when: "ansible_hostname == groups['control_plane'][0]"
+
+- name: Wait for first control plane to be ready
+  command: "kubectl get nodes"
+  register: result
+  retries: 30
+  delay: 5
+  until: result.rc == 0
+  when: "ansible_hostname == groups['control_plane'][0]"
+
+- name: Get k3s token from first control plane node
+  command: "cat /etc/rancher/k3s/token"
+  register: k3s_token_output
+  when: "ansible_hostname == groups['control_plane'][0]"
+
+- name: Set k3s token fact (for use by other nodes)
+  set_fact:
+    k3s_token: "{{ k3s_token_output.stdout }}"
+  when: "ansible_hostname == groups['control_plane'][0]"
+
+- name: Store k3s token for other nodes
+  set_fact:
+    k3s_token: "{{ hostvars[groups['control_plane'][0]].k3s_token_output.stdout }}"
+  when: "ansible_hostname != groups['control_plane'][0]"
+
+- name: Install k3s on additional control plane nodes (join)
+  shell: >
+    curl -sfL https://get.k3s.io |
+    K3S_TOKEN={{ k3s_token }}
+    sh -s - --server https://{{ load_balancer_vip }}:6443
+    --node-name {{ ansible_hostname }}
+  args:
+    creates: /etc/rancher/k3s/token
+  when: "ansible_hostname in groups['control_plane'] and ansible_hostname != groups['control_plane'][0]"
+
+- name: Install k3s on worker nodes
+  shell: >
+    curl -sfL https://get.k3s.io |
+    K3S_TOKEN={{ k3s_token }}
+    sh -s - --server https://{{ load_balancer_vip }}:6443
+    --node-name {{ ansible_hostname }} --worker
+  args:
+    creates: /etc/rancher/k3s/token
+  when: "ansible_hostname in groups['worker']"

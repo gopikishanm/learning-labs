@@ -1,0 +1,100 @@
+---
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages
+  apt:
+    name:
+      - curl
+      - gnupg2
+      - software-properties-common
+      - ca-certificates
+      - apt-transport-https
+    state: present
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    state: present
+
+- name: Install containerd
+  apt:
+    name: containerd
+    state: present
+
+- name: Create containerd config directory
+  file:
+    path: /etc/containerd
+    state: directory
+
+- name: Generate containerd config
+  command: "containerd config default > /etc/containerd/config.toml"
+  args:
+    creates: /etc/containerd/config.toml
+
+- name: Configure containerd to use systemd cgroup driver
+  lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    line: 'SystemdCgroup = true'
+
+- name: Restart containerd service
+  systemd:
+    name: containerd
+    state: restarted
+    enabled: yes
+
+- name: Create modules-load.d directory
+  file:
+    path: /etc/modules-load.d
+    state: directory
+
+- name: Enable required kernel modules
+  copy:
+    content: |
+      overlay
+      br_netfilter
+    dest: /etc/modules-load.d/k8s.conf
+
+- name: Load kernel modules immediately
+  command: "modprobe {{ item }}"
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Configure sysctl settings for Kubernetes networking
+  copy:
+    content: |
+      net.bridge.bridge-nf-call-iptables = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward = 1
+      vm.swappiness=0
+    dest: /etc/sysctl.d/k8s.conf
+
+- name: Apply sysctl settings
+  command: "sysctl --system"
+
+- name: Create systemd system.conf.d directory
+  file:
+    path: /etc/systemd/system.conf.d
+    state: directory
+
+- name: Configure systemd cgroup accounting
+  copy:
+    content: |
+      [Manager]
+      DefaultCPUAccounting=yes
+      DefaultIOAccounting=yes
+      DefaultMemoryAccounting=yes
+    dest: /etc/systemd/system.conf.d/10-cgroups.conf
+
+- name: Reload systemd configuration
+  systemd:
+    daemon_reload: yes

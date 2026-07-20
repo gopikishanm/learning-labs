@@ -1,0 +1,80 @@
+---
+# Phase 1-2: Host OS Preparation (common)
+- name: Phase 1 & 2 - Host OS Preparation on all nodes
+  hosts: all
+  become: yes
+  tags: [common, phase1, phase2]
+  roles:
+    - common
+
+# Phase 3: Load Balancer Configuration
+- name: Phase 3 - Configure Load Balancer nodes (HAProxy + Keepalived)
+  hosts: load_balancer
+  become: yes
+  tags: [loadbalancer, phase3]
+  roles:
+    - haproxy
+    - keepalived
+
+# Phase 4: K3s Cluster Setup
+- name: Phase 4 - Install K3s on first control plane node (cluster-init)
+  hosts: control_plane
+  become: yes
+  max_fail_percentage: 0
+  serial: 1
+  tags: [k3s, phase4]
+  roles:
+    - k3s
+
+- name: Phase 4 - Install K3s on worker nodes
+  hosts: worker
+  become: yes
+  tags: [k3s, phase4]
+  roles:
+    - k3s
+
+# Phase 5: CNI and Storage Deployment
+- name: Phase 5 - Deploy Cilium CNI
+  hosts: control_plane[0]
+  become: yes
+  tags: [cni-storage, phase5, cilium]
+  roles:
+    - cilium
+
+- name: Phase 5 - Deploy Storage Solution
+  hosts: control_plane[0]
+  become: yes
+  tags: [cni-storage, phase5, storage]
+  roles:
+    - storage
+
+- name: Verify cluster setup
+  hosts: control_plane[0]
+  become: yes
+  tags: [verify, never]
+  tasks:
+    - name: Check cluster nodes
+      command: "kubectl get nodes -o wide"
+      register: kubectl_nodes_output
+
+    - name: Display cluster nodes
+      debug:
+        var: kubectl_nodes_output.stdout_lines
+
+    - name: Check all pods
+      command: "kubectl get pods -A"
+      register: kubectl_pods_output
+
+    - name: Display all pods
+      debug:
+        var: kubectl_pods_output.stdout_lines
+
+    - name: Check storage classes
+      command: "kubectl get sc"
+      register: kubectl_sc_output
+      ignore_errors: yes
+
+    - name: Display storage classes
+      debug:
+        var: kubectl_sc_output.stdout_lines
+      when: kubectl_sc_output is defined

@@ -1,0 +1,40 @@
+---
+# Global variables for Kubernetes cluster
+
+# Cluster configuration
+cluster_name: "k3s-cluster"
+cluster_domain: "localdomain"
+
+# Network settings
+kube_network_plugin: "cilium"
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+
+# Security settings
+enable_ssh_key_auth: true
+
+# Container runtime
+container_runtime: "containerd"
+
+# K3s settings
+k3s_version: "latest"
+k3s_token: "secret-token"
+
+# Load Balancer settings
+# Replace these with actual IP addresses for your environment
+load_balancer_vip: "192.168.1.100"       # Virtual IP (VIP) for the load balancer
+load_balancer_vip_prefix: "24"           # CIDR prefix for the VIP
+load_balancer_interface: "eth0"          # Network interface for VIP
+keepalived_router_id: 51
+keepalived_password: "k3scluster"
+
+# Control Plane node IPs (replace with actual IPs)
+cp_node_1_ip: "192.168.1.101"
+cp_node_2_ip: "192.168.1.102"
+cp_node_3_ip: "192.168.1.103"
+
+# HAProxy settings
+haproxy_maxconn: 4096
+haproxy_timeout_connect: 5000ms
+haproxy_timeout_client: 50000ms
+haproxy_timeout_server: 50000ms

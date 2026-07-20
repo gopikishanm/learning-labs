@@ -1,0 +1,22 @@
+global
+    daemon
+    maxconn {{ haproxy_maxconn }}
+
+defaults
+    mode tcp
+    timeout connect {{ haproxy_timeout_connect }}
+    timeout client {{ haproxy_timeout_client }}
+    timeout server {{ haproxy_timeout_server }}
+
+frontend k8s-api
+    bind *:6443
+    mode tcp
+    default_backend k8s-api-servers
+
+backend k8s-api-servers
+    mode tcp
+    balance roundrobin
+    option httpchk GET /healthz
+    server cp1 {{ cp_node_1_ip }}:6443 check
+    server cp2 {{ cp_node_2_ip }}:6443 check
+    server cp3 {{ cp_node_3_ip }}:6443 check
