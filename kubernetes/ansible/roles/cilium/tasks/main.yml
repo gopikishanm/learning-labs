@@ -1,0 +1,41 @@
+---
+# Tasks for Cilium CNI installation
+
+- name: Download Cilium CLI
+  get_url:
+    url: https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+    dest: /tmp/cilium-linux-amd64.tar.gz
+    mode: '0644'
+
+- name: Extract Cilium CLI
+  unarchive:
+    src: /tmp/cilium-linux-amd64.tar.gz
+    dest: /usr/local/bin/
+    remote_src: yes
+    creates: /usr/local/bin/cilium
+
+- name: Install Cilium with eBPF support
+  shell: |
+    cilium install --version 1.15 \
+      --config enable-endpoint-routes=true \
+      --config enable-local-node-route=false \
+      --config enable-host-reachable-services=true \
+      --config enable-ipv4-masquerade=false \
+      --config enable-bpf-tproxy=true
+  args:
+    creates: /var/run/cilium/cilium.sock
+  register: cilium_install
+  # This may fail if already installed, which is fine
+
+- name: Wait for Cilium to be ready
+  shell: "cilium status --wait"
+  register: cilium_status
+  retries: 30
+  delay: 10
+  until: cilium_status.rc == 0
+  changed_when: false
+
+- name: Display Cilium status
+  debug:
+    var: cilium_status.stdout_lines
+  when: cilium_status.stdout_lines is defined

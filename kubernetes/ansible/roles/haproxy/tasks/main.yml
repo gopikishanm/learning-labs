@@ -1,0 +1,36 @@
+---
+# Tasks for HAProxy installation and configuration
+
+- name: Install HAProxy
+  apt:
+    name: haproxy
+    state: present
+    update_cache: yes
+
+- name: Create HAProxy configuration directory
+  file:
+    path: /etc/haproxy
+    state: directory
+
+- name: Backup default HAProxy configuration
+  copy:
+    src: /etc/haproxy/haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg.bak
+    remote_src: yes
+    force: no
+
+- name: Deploy HAProxy configuration
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart haproxy
+
+- name: Enable HAProxy service
+  systemd:
+    name: haproxy
+    enabled: yes
+    state: started
+  notify: restart haproxy
