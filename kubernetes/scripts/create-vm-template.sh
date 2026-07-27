@@ -64,10 +64,25 @@ if ! pvesm status -content images | grep -q "$PROXMOX_STORAGE"; then
     warn "Storage '$PROXMOX_STORAGE' not found in 'pvesm status'. Proceeding anyway."
 fi
 
+# Ensure the 'local' storage supports snippets (required for vendor-data)
+# The 'snippets' content type is not enabled by default on the 'local' storage.
+# Without it, 'qm set --cicustom' cannot find the vendor-data file.
+log "Enabling snippets content type on 'local' storage..."
+pvesm set local --content snippets,rootdir,images,vztmpl 2>/dev/null || warn "Failed to set storage content. You may need to run: pvesm set local --content snippets,rootdir,images,vztmpl"
+
 # Create a base VM template first, then import the disk
+# ISSUE: Running 'qm template' on an already-converted VM fails with
+# "cannot create template from a template". The original check used
+# 'qm list' but didn't distinguish between regular VMs and templates.
+# FIX: Use 'qm config' to check for the 'template:' flag. If already
+# a template, exit early since all setup is already done.
 log "Creating base VM template..."
-if qm list 2>/dev/null | awk '{print $1}' | grep -q "^$VM_TEMPLATE_ID$"; then
-    warn "VM ID $VM_TEMPLATE_ID already exists. Reusing it."
+if qm config "$VM_TEMPLATE_ID" &>/dev/null; then
+    if qm config "$VM_TEMPLATE_ID" 2>/dev/null | grep -q "^template:"; then
+        log "VM ID $VM_TEMPLATE_ID is already a template. Nothing to do."
+        exit 0
+    fi
+    warn "VM ID $VM_TEMPLATE_ID already exists (as a regular VM). Reusing it."
 else
     qm create "$VM_TEMPLATE_ID" --name "$BASE_VM_NAME" --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0 || error "Failed to create VM template"
 fi
@@ -105,8 +120,16 @@ log "Resizing disk to 30G..."
 qm disk resize "$VM_TEMPLATE_ID" scsi0 30G || warn "Disk resize failed. You may need to resize manually."
 
 # Set cloud-init drive
+# ISSUE: On re-run, 'qm set --ide2' fails with:
+#   lvcreate 'pve/vm-9000-cloudinit' error: Logical Volume already exists
+# FIX: Check if the cloudinit drive is already configured. If so, skip creation.
 log "Adding cloud-init drive..."
-qm set "$VM_TEMPLATE_ID" --ide2 "$PROXMOX_STORAGE":cloudinit
+EXISTING_CLOUDINIT=$(qm config "$VM_TEMPLATE_ID" 2>/dev/null | grep -E '^ide2:' | grep -o 'cloudinit' || true)
+if [ -n "$EXISTING_CLOUDINIT" ]; then
+    log "Cloud-init drive already exists. Skipping."
+else
+    qm set "$VM_TEMPLATE_ID" --ide2 "$PROXMOX_STORAGE":cloudinit || error "Failed to add cloud-init drive"
+fi
 
 # Set boot order to boot from disk first (prevents PXE/network boot)
 log "Setting boot order to disk first..."
@@ -125,7 +148,33 @@ log "Configuring cloud-init settings..."
 # and will pick up a random DHCP IP before the static IP override takes effect.
 # Instead, set static IPs on each clone individually using qm set.
 qm set "$VM_TEMPLATE_ID" --ciuser ubuntu || error "Failed to configure cloud-init user"
+# ISSUE: --cipassword enables SSH password authentication by default, but we
+# want SSH key-only authentication for security. However, we still need a
+# password for sudo privilege escalation.
+# FIX: Keep --cipassword for sudo access, but create a cloud-init vendor-data
+# snippet that explicitly sets ssh_pwauth: false to disable SSH password login.
 qm set "$VM_TEMPLATE_ID" --cipassword "ubuntu" || error "Failed to configure cloud-init password"
+
+# Disable SSH password authentication via cloud-init vendor-data
+# This keeps the password for sudo while enforcing key-only SSH access
+VENDOR_DATA_DIR="/var/lib/vz/snippets"
+VENDOR_DATA_FILE="${VENDOR_DATA_DIR}/disable-ssh-password.yaml"
+VENDOR_DATA_STORAGE="local"  # Adjust if your snippets storage is different
+if [ ! -d "$VENDOR_DATA_DIR" ]; then
+    log "Creating snippets directory at $VENDOR_DATA_DIR..."
+    mkdir -p "$VENDOR_DATA_DIR" || error "Failed to create snippets directory"
+fi
+if [ ! -f "$VENDOR_DATA_FILE" ]; then
+    log "Creating cloud-init vendor-data to disable SSH password authentication..."
+    cat > "$VENDOR_DATA_FILE" << 'EOF'
+#cloud-config
+# Disable SSH password authentication while keeping the password for sudo.
+# ssh_pwauth: false ensures only SSH key authentication works for remote login.
+ssh_pwauth: false
+EOF
+    log "Vendor-data created at $VENDOR_DATA_FILE"
+fi
+qm set "$VM_TEMPLATE_ID" --cicustom "vendor=${VENDOR_DATA_STORAGE}:snippets/disable-ssh-password.yaml" || warn "Failed to set cicustom vendor-data. SSH password auth may still be enabled."
 
 # Use the generated SSH key for VM access
 # Use scp -r to copy the public key to the VM's cloud-init configuration
@@ -165,9 +214,11 @@ echo ""
 echo "IMPORTANT:"
 echo "  - The template does NOT have --ipconfig0 set (no DHCP)"
 echo "  - You MUST set a static IP on each clone before first boot"
-echo "  - Login with user 'ubuntu' using either:"
-echo "    a) SSH key: ssh -i ssh-keys/k3s-cluster ubuntu@<VM_IP>"
-echo "    b) Password: ubuntu (set via --cipassword during template creation)"
+echo "  - SSH password authentication is DISABLED for security"
+echo "  - Login with user 'ubuntu' using SSH key only:"
+echo "    ssh -i ssh-keys/k3s-cluster ubuntu@<VM_IP>"
+echo "  - The password 'ubuntu' works ONLY for sudo privilege escalation"
+echo "    (e.g., sudo commands will prompt for the password)"
 echo ""
 echo "--- Control Plane Nodes ---"
 echo "qm clone $VM_TEMPLATE_ID {CP_VM_ID_1} --name k3s-cp-1"
