@@ -5,19 +5,11 @@
   apt:
     name: keepalived
     state: present
-    update_cache: yes
 
 - name: Create Keepalived configuration directory
   file:
     path: /etc/keepalived
     state: directory
-
-- name: Backup default Keepalived configuration
-  copy:
-    src: /etc/keepalived/keepalived.conf
-    dest: /etc/keepalived/keepalived.conf.bak
-    remote_src: yes
-    force: no
 
 - name: Deploy Keepalived configuration
   template:

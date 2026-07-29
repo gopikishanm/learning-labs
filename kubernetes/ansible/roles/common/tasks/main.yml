@@ -1,4 +1,15 @@
 ---
+# Fix: Previous broken runs may have left malformed docker source files on the remote host.
+# Remove BOTH old-style (docker.list) and new-style (docker.sources) to prevent conflicts.
+- name: Remove malformed docker source files from previous broken runs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/docker.list
+    - /etc/apt/sources.list.d/docker.sources
+  ignore_errors: yes
+
 - name: Update package cache
   apt:
     update_cache: yes
@@ -14,15 +25,26 @@
       - apt-transport-https
     state: present
 
-- name: Add Docker APT repository (DEB822 format)
+# Fix: The deb822_repository module requires 'name', 'uris', 'suites', and 'components'.
+# Previously had two broken tasks: first was missing uris/suites/components, second used
+# legacy 'repo' string format which doesn't work with this module (missing 'name' arg).
+# Using Docker's official method: curl + gpg --dearmor ensures the key is in the correct
+# binary format that signed-by expects (get_url alone may not produce a valid keyring).
+- name: Add Docker GPG key (official method)
+  ansible.builtin.shell:
+    cmd: >
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
+      gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    creates: /usr/share/keyrings/docker-archive-keyring.gpg
+
+- name: Add Docker APT repository
   ansible.builtin.deb822_repository:
     name: docker
     types: [deb]
-    state: present
-
-- name: Add Docker repository
-  ansible.builtin.deb822_repository:
-    repo: "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_distribution_release }}"
+    components: [stable]
+    signed_by: /usr/share/keyrings/docker-archive-keyring.gpg
     state: present
 
 - name: Install containerd
@@ -35,8 +57,11 @@
     path: /etc/containerd
     state: directory
 
+# Fix: The 'command' module does NOT invoke a shell, so '>' redirection is treated as a
+# literal argument to containerd — the file never gets created. Use 'shell' module instead
+# so the shell interprets the redirect properly.
 - name: Generate containerd config
-  command: "containerd config default > /etc/containerd/config.toml"
+  ansible.builtin.shell: "containerd config default > /etc/containerd/config.toml"
   args:
     creates: /etc/containerd/config.toml
 

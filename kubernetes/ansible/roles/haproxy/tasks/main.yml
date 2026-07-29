@@ -5,7 +5,6 @@
   apt:
     name: haproxy
     state: present
-    update_cache: yes
 
 - name: Create HAProxy configuration directory
   file:

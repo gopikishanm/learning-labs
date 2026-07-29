@@ -7,6 +7,9 @@
     - /etc/rancher/k3s
     - /root/.kube
 
+# Fix: 'k3s_token is undefined' — group_vars/all.yml was not being loaded because
+# group_vars/ must be inside the inventory directory (inventory/group_vars/), not at
+# the ansible root level. Ansible resolves group_vars relative to the inventory file.
 - name: Install k3s on first control plane node (cluster-init)
   shell: >
     curl -sfL https://get.k3s.io |

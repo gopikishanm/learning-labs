@@ -1,6 +1,8 @@
 ---
 - name: Print current executing role name
   hosts: localhost
+  gather_facts: false
+  become: false
   tasks:
     - name: Print current executing role name
       ansible.builtin.debug:
@@ -15,13 +17,13 @@
     - common
 
 # Phase 3: Load Balancer Configuration
-# - name: Phase 3 - Configure Load Balancer nodes (HAProxy + Keepalived)
-#   hosts: load_balancer
-#   become: yes
-#   tags: [loadbalancer, phase3]
-#   roles:
-#     - haproxy
-#     - keepalived
+- name: Phase 3 - Configure Load Balancer nodes (HAProxy + Keepalived)
+  hosts: load_balancer
+  become: yes
+  tags: [loadbalancer, phase3]
+  roles:
+    - haproxy
+    - keepalived
 
 # Phase 4: K3s Cluster Setup
 - name: Phase 4 - Install K3s on first control plane node (cluster-init)
@@ -33,12 +35,12 @@
   roles:
     - k3s
 
-# - name: Phase 4 - Install K3s on worker nodes
-#   hosts: worker
-#   become: yes
-#   tags: [k3s, phase4]
-#   roles:
-#     - k3s
+- name: Phase 4 - Install K3s on worker nodes
+  hosts: worker
+  become: yes
+  tags: [k3s, phase4]
+  roles:
+    - k3s
 
 # Phase 5: CNI and Storage Deployment
 - name: Phase 5 - Deploy Cilium CNI

@@ -38,5 +38,41 @@ E: Could not create temporary file for /var/lib/apt/extended_states - mkstemp (1
 E: Failed to write temporary StateFile /var/lib/apt/extended_states
 
 # This error is caused by above command where ansible_become is set to false. Privilige escalation is necessary to mark packages as installed.
+
+$ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml --ask-become-pass --private-key= --tags common
+
+# Output
+PLAY RECAP ********************************************************************************************************************************************************************************
+k3s-cp-1                   : ok=18   changed=11   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+
+# Need to setup loadbalancer vm before initializing k3s as it needs load balancer ip
+
+$ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml --ask-become-pass --private-key= --tags k3s
+
+
 ```
 
+### Loadbalancer Setup
+
+```sh
+
+# Setup k3s-lb-1
+qm clone 9000 400 --name k3s-lb-1
+qm set 400 --ipconfig0 ip=192.168.1.160/24,gw=192.168.1.1
+qm cloudinit update 400
+qm start 400
+
+# Run from ansible folder
+
+$ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml --private-key= --tags common
+
+
+```
+
+### Drop Infra
+
+```sh
+$ qm stop 300 && qm destroy 300 # Destroy cp-1 
+$ qm destroy 9000 # Destroy template
+
+```
