@@ -74,7 +74,7 @@ Edit `group_vars/all.yml` to set your environment-specific values:
 
 ```yaml
 load_balancer_vip: "192.168.1.100"       # Virtual IP for the cluster
-load_balancer_interface: "eth0"          # Network interface on LB node
+# Note: Network interface for keepalived is auto-detected (first non-loopback UP interface)
 cp_node_1_ip: "192.168.1.101"           # Control plane node 1 IP
 cp_node_2_ip: "192.168.1.102"           # Control plane node 2 IP
 cp_node_3_ip: "192.168.1.103"           # Control plane node 3 IP

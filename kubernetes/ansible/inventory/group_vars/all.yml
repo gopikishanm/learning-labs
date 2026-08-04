@@ -24,7 +24,6 @@ k3s_token: "secret-token"
 # Replace these with actual IP addresses for your environment
 load_balancer_vip: "192.168.1.160"       # Virtual IP (VIP) for the load balancer
 load_balancer_vip_prefix: "24"           # CIDR prefix for the VIP
-load_balancer_interface: "eth0"          # Network interface for VIP
 keepalived_router_id: 51
 keepalived_password: "k3scluster"
 
@@ -38,3 +37,10 @@ haproxy_timeout_server: 50000
 cp_node_1_ip: "192.168.1.150"
 cp_node_2_ip: "192.168.1.151"
 cp_node_3_ip: "192.168.1.152"
+
+# Node networking (used by common role to ensure correct static IP)
+# Per-host expected IP is taken from ansible_host in inventory
+# Override these per host in inventory if needed (e.g., k3s-cp-1 node_gateway=192.168.1.1)
+node_gateway: "192.168.1.1"
+node_netmask_prefix: "24"
+node_dns: "8.8.8.8 8.8.4.4"

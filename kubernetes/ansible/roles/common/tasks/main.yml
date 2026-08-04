@@ -1,6 +1,133 @@
 ---
-# Fix: Previous broken runs may have left malformed docker source files on the remote host.
-# Remove BOTH old-style (docker.list) and new-style (docker.sources) to prevent conflicts.
+# Phase 0: Ensure correct static IP is configured on the VM
+# -----------------------------------------------------------
+# These tasks verify the VM has the expected static IP (from ansible_host).
+# If not (e.g., cloud-init failed on cloned Proxmox VMs, or VM picked up a
+# DHCP IP), they deploy a netplan config with the expected static IP and apply
+# it without dropping the SSH connection.
+#
+# Key design decisions:
+#   - Uses netplan (not ifupdown) because Ubuntu 24.04 uses systemd-networkd.
+#   - Never runs `ifdown` — that would kill the Ansible SSH connection.
+#   - Disables cloud-init network management so it doesn't reapply on reboot.
+#   - Netplan file is 99- prefixed to sort AFTER cloud-init's 50- config.
+
+- name: Detect the active network interface dynamically
+  ansible.builtin.shell:
+    cmd: >
+      ip -o link show |
+      awk '/state UP/ && !/lo/ {print $2; exit}' |
+      tr -d ':'
+  register: iface_detect
+  changed_when: false
+  failed_when: false
+
+- name: Set detected interface fact
+  ansible.builtin.set_fact:
+    node_interface: "{{ iface_detect.stdout | default('eth0') }}"
+
+- name: Display detected interface
+  ansible.builtin.debug:
+    msg: "Detected network interface: {{ node_interface }}"
+
+- name: Record the expected static IP for this node
+  ansible.builtin.set_fact:
+    expected_ip: "{{ ansible_host }}"
+
+- name: Check current IPv4 address on the detected interface
+  ansible.builtin.shell:
+    cmd: >
+      ip -4 addr show {{ node_interface }} | grep -oP 'inet \K[\d.]+' | head -1
+  register: ip_check
+  changed_when: false
+  failed_when: false
+
+- name: Record current IP (empty string if no IP assigned)
+  ansible.builtin.set_fact:
+    current_ip: "{{ ip_check.stdout | default('') }}"
+
+- name: Display IP comparison
+  ansible.builtin.debug:
+    msg:
+      - "Expected IP (from inventory): {{ expected_ip }}"
+      - "Detected interface: {{ node_interface }}"
+      - "Current IP (from ip a): {{ current_ip | default('(no IP assigned)') }}"
+
+- name: Fix IP if not assigned or does not match the expected static IP
+  when:
+    - current_ip == '' or current_ip != expected_ip
+  block:
+    - name: Disable cloud-init network management (prevent reapply on reboot)
+      ansible.builtin.copy:
+        content: |
+          network:
+            config: disabled
+        dest: /etc/cloud/cloud.cfg.d/99-disable-network.cfg
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Deploy netplan config with static IP
+      ansible.builtin.copy:
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              {{ node_interface }}:
+                addresses:
+                  - {{ expected_ip }}/{{ node_netmask_prefix }}
+                routes:
+                  - to: default
+                    via: {{ node_gateway }}
+                nameservers:
+                  addresses:
+                    {% for ns in node_dns.split() %}
+                    - {{ ns }}
+                    {% endfor %}
+        dest: /etc/netplan/99-static-ip.yaml
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Remove any cloud-init-generated netplan configs (50-cloud-init-*.yaml)
+      ansible.builtin.shell:
+        cmd: rm -f /etc/netplan/50-cloud-init-*.yaml
+      changed_when: false
+
+    - name: Apply netplan config (does NOT drop SSH connection)
+      ansible.builtin.command: netplan apply
+      register: netplan_result
+      changed_when: true
+
+    - name: Verify new IP is now assigned
+      ansible.builtin.shell:
+        cmd: >
+          ip -4 addr show {{ node_interface }} | grep -oP 'inet \K[\d.]+' | head -1
+      register: verify_ip
+      changed_when: false
+
+    - name: Fail if IP still not assigned after netplan apply
+      ansible.builtin.fail:
+        msg: >-
+          IP assignment failed on {{ inventory_hostname }}.
+          Expected {{ expected_ip }} but interface {{ node_interface }} has
+          {{ verify_ip.stdout | default('NO IP') }}.
+      when: verify_ip.stdout | default('') != expected_ip
+
+    - name: Confirm IP assignment
+      ansible.builtin.debug:
+        msg: "IP {{ expected_ip }} confirmed on {{ node_interface }} ({{ inventory_hostname }})."
+
+  rescue:
+    - name: IP fix failed — print diagnostic info
+      ansible.builtin.debug:
+        msg:
+          - "IP fix failed for {{ inventory_hostname }}"
+          - "Expected IP: {{ expected_ip }}"
+          - "Detected interface: {{ node_interface }}"
+          - "Check if the VM is reachable and netplan/networkd is installed."
+
 - name: Remove malformed docker source files from previous broken runs
   ansible.builtin.file:
     path: "{{ item }}"

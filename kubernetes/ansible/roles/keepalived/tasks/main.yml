@@ -6,6 +6,20 @@
     name: keepalived
     state: present
 
+- name: Dynamically detect the active network interface for keepalived
+  ansible.builtin.shell:
+    cmd: >
+      ip -o link show |
+      awk '/state UP/ && !/lo/ {print $2; exit}' |
+      tr -d ':'
+  register: iface_detect
+  changed_when: false
+  failed_when: false
+
+- name: Set keepalived interface fact
+  ansible.builtin.set_fact:
+    keepalived_interface: "{{ iface_detect.stdout | default('eth0') }}"
+
 - name: Create Keepalived configuration directory
   file:
     path: /etc/keepalived
@@ -20,9 +34,27 @@
     mode: '0644'
   notify: restart keepalived
 
+- name: Create systemd drop-in for keepalived to wait for network-online
+  ansible.builtin.file:
+    path: /etc/systemd/system/keepalived.service.d
+    state: directory
+
+- name: Configure keepalived to wait for network-online.target
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      After=network-online.target
+      Wants=network-online.target
+    dest: /etc/systemd/system/keepalived.service.d/network-wait.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart keepalived
+
 - name: Enable Keepalived service
   systemd:
     name: keepalived
     enabled: yes
     state: started
+    daemon_reload: yes
   notify: restart keepalived

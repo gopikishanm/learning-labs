@@ -1,6 +1,6 @@
 vrrp_instance VI_1 {
     state MASTER
-    interface {{ load_balancer_interface }}
+    interface {{ keepalived_interface }}
     virtual_router_id {{ keepalived_router_id }}
     priority 100
     advert_int 1
