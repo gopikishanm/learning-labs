@@ -334,3 +334,40 @@ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml \
 
 - Ansible installed on the control machine
 - SSH access to all nodes with appropriate permissions
+
+---
+
+## Known Issues
+
+### VM Has No IPv4 Address After Clone (Proxmox cloud-init VMs)
+
+**Symptoms:**
+- Ansible Phase 0 detects the interface (e.g., `enp0s18`) but finds no IP or a wrong IP
+- Running `ip a` on the VM shows the interface has no IPv4 address
+- Keepalived enters fault state with "no IPv4 address for interface"
+
+**Root cause (not fully resolved):**
+The Phase 0 tasks attempt to fix this by disabling cloud-init network management, deploying a netplan YAML (`/etc/netplan/99-static-ip.yaml`), removing cloud-init's netplan configs, and running `netplan apply`. However, this approach has **not yet reliably fixed** the issue.
+
+**Suspected causes:**
+1. Cloud-init may still override networking via its datasource config drive (`/var/lib/cloud/`) even after `99-disable-network.cfg` is written.
+2. `/etc/netplan/` may not exist yet on first boot, or the system may not be using netplan.
+3. `netplan apply` may fail silently if `systemd-networkd` is not properly initialized.
+
+**Next steps to investigate:**
+1. SSH into a VM that has no IP and run:
+   ```bash
+   ip a
+   cat /etc/netplan/* 2>/dev/null || echo "No netplan files"
+   ls /etc/cloud/cloud.cfg.d/
+   cat /etc/cloud/cloud.cfg.d/99-disable-network.cfg 2>/dev/null || echo "File not written"
+   sudo netplan apply --debug
+   ```
+2. Check if `systemd-networkd` is active: `sudo systemctl status systemd-networkd`
+3. Check cloud-init datasource: `cat /var/lib/cloud/instance/datasource`
+4. As a workaround, try assigning the IP directly:
+   ```bash
+   sudo ip addr add 192.168.1.150/24 dev enp0s18
+   sudo ip route add default via 192.168.1.1
+   ```
+5. Consider configuring the static IP at the Proxmox template level rather than relying on clone + Ansible fix-up.
