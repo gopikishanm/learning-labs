@@ -17,13 +17,12 @@
     - common
 
 # Phase 3: Load Balancer Configuration
-- name: Phase 3 - Configure Load Balancer nodes (HAProxy + Keepalived)
+- name: Phase 3 - Configure Load Balancer node (HAProxy)
   hosts: load_balancer
   become: yes
   tags: [loadbalancer, phase3]
   roles:
     - haproxy
-    - keepalived
 
 # Phase 4: K3s Cluster Setup
 - name: Phase 4 - Install K3s on first control plane node (cluster-init)

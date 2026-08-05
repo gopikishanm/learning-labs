@@ -1,6 +1,0 @@
-# Keepalived handlers
-- name: restart keepalived
-  systemd:
-    name: keepalived
-    state: restarted
-    daemon_reload: yes

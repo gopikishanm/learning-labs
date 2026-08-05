@@ -7,7 +7,7 @@ This directory contains Ansible playbooks and roles to automate the configuratio
 The cluster consists of:
 - **3 Control Plane nodes** (HA with embedded etcd via `--cluster-init`)
 - **1+ Worker nodes** 
-- **1 Load Balancer node** (HAProxy + Keepalived for a Virtual IP)
+- **1 Load Balancer node** (HAProxy for API server load balancing)
 
 ## Directory Structure
 
@@ -23,7 +23,6 @@ ansible/
 ├── roles/
 │   ├── common/                 # Phase 1-2: Host OS preparation
 │   ├── haproxy/                # Phase 3: HAProxy load balancer
-│   ├── keepalived/             # Phase 3: Keepalived VIP management
 │   ├── k3s/                    # Phase 4: K3s installation & HA setup
 │   ├── cilium/                 # Phase 5: Cilium CNI with eBPF
 │   └── storage/                # Phase 5: OpenEBS storage
@@ -73,8 +72,7 @@ k3s-lb-1 ansible_host=192.168.1.10
 Edit `group_vars/all.yml` to set your environment-specific values:
 
 ```yaml
-load_balancer_vip: "192.168.1.100"       # Virtual IP for the cluster
-# Note: Network interface for keepalived is auto-detected (first non-loopback UP interface)
+load_balancer_vip: "192.168.1.100"       # IP of the load balancer node
 cp_node_1_ip: "192.168.1.101"           # Control plane node 1 IP
 cp_node_2_ip: "192.168.1.102"           # Control plane node 2 IP
 cp_node_3_ip: "192.168.1.103"           # Control plane node 3 IP
@@ -139,11 +137,13 @@ Applies to **all nodes** (control plane, worker, and load balancer).
 - Installs and configures containerd with systemd cgroup driver
 - Configures systemd cgroup accounting
 
-### Phase 3: Load Balancer Configuration (Roles: `haproxy` + `keepalived`)
+### Phase 3: Load Balancer Configuration (Role: `haproxy`)
 
 **Applies to:** `load_balancer` group (k3s-lb-1)
 
-The load balancer provides a single Virtual IP (VIP) that all K3s nodes use to connect to the Kubernetes API server. This ensures HA for the control plane — if one control plane node goes down, the load balancer routes traffic to the remaining nodes.
+The load balancer provides a single endpoint that all K3s nodes use to connect to the Kubernetes API server. It distributes traffic across the control plane nodes — if one control plane node goes down, HAProxy routes traffic to the remaining nodes.
+
+> **Note:** Keepalived was originally included but has been removed. With only one load balancer VM, a VRRP-based virtual IP provides no high availability benefit — if the single LB node fails, Keepalived fails with it. HAProxy alone on the node's static IP is sufficient for this setup. If you add a second LB node in the future, reintroduce Keepalived to float a VIP between them.
 
 #### haproxy role
 - Installs HAProxy package
@@ -151,12 +151,6 @@ The load balancer provides a single Virtual IP (VIP) that all K3s nodes use to c
 - Configures TCP load balancing on port 6443 (Kubernetes API)
 - Configures HTTP health checks on `/healthz` endpoint
 - Balances across all 3 control plane nodes using round-robin
-
-#### keepalived role
-- Installs Keepalived package
-- Deploys `/etc/keepalived/keepalived.conf` from template
-- Configures VRRP with a virtual IP (VIP)
-- Provides high availability for the VIP
 
 **Configuration template** (`roles/haproxy/templates/haproxy.cfg.j2`):
 ```cfg
@@ -180,9 +174,7 @@ backend k8s-api-servers
     balance roundrobin
     option httpchk GET /healthz
     server cp1 {{ cp_node_1_ip }}:6443 check
-    server cp2 {{ cp_node_2_ip }}:6443 check
-    server cp3 {{ cp_node_3_ip }}:6443 check
-```
+   
 
 ### Phase 4: K3s Cluster Setup (Role: `k3s`)
 
@@ -298,10 +290,6 @@ ssh ubuntu@<CP1_IP> sudo journalctl -u k3s -f
 
 ### VIP Not Reachable
 ```bash
-# Check keepalived on LB node
-ssh ubuntu@<LB_IP> sudo systemctl status keepalived
-ssh ubuntu@<LB_IP> sudo ip addr show eth0
-
 # Check haproxy
 ssh ubuntu@<LB_IP> sudo systemctl status haproxy
 ssh ubuntu@<LB_IP> sudo haproxy -f /etc/haproxy/haproxy.cfg -c
@@ -334,40 +322,3 @@ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml \
 
 - Ansible installed on the control machine
 - SSH access to all nodes with appropriate permissions
-
----
-
-## Known Issues
-
-### VM Has No IPv4 Address After Clone (Proxmox cloud-init VMs)
-
-**Symptoms:**
-- Ansible Phase 0 detects the interface (e.g., `enp0s18`) but finds no IP or a wrong IP
-- Running `ip a` on the VM shows the interface has no IPv4 address
-- Keepalived enters fault state with "no IPv4 address for interface"
-
-**Root cause (not fully resolved):**
-The Phase 0 tasks attempt to fix this by disabling cloud-init network management, deploying a netplan YAML (`/etc/netplan/99-static-ip.yaml`), removing cloud-init's netplan configs, and running `netplan apply`. However, this approach has **not yet reliably fixed** the issue.
-
-**Suspected causes:**
-1. Cloud-init may still override networking via its datasource config drive (`/var/lib/cloud/`) even after `99-disable-network.cfg` is written.
-2. `/etc/netplan/` may not exist yet on first boot, or the system may not be using netplan.
-3. `netplan apply` may fail silently if `systemd-networkd` is not properly initialized.
-
-**Next steps to investigate:**
-1. SSH into a VM that has no IP and run:
-   ```bash
-   ip a
-   cat /etc/netplan/* 2>/dev/null || echo "No netplan files"
-   ls /etc/cloud/cloud.cfg.d/
-   cat /etc/cloud/cloud.cfg.d/99-disable-network.cfg 2>/dev/null || echo "File not written"
-   sudo netplan apply --debug
-   ```
-2. Check if `systemd-networkd` is active: `sudo systemctl status systemd-networkd`
-3. Check cloud-init datasource: `cat /var/lib/cloud/instance/datasource`
-4. As a workaround, try assigning the IP directly:
-   ```bash
-   sudo ip addr add 192.168.1.150/24 dev enp0s18
-   sudo ip route add default via 192.168.1.1
-   ```
-5. Consider configuring the static IP at the Proxmox template level rather than relying on clone + Ansible fix-up.
