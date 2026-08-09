@@ -251,3 +251,77 @@
 - name: Reload systemd configuration
   systemd:
     daemon_reload: yes
+
+# Phase: Reboot check and health verification
+# -----------------------------------------------------------
+# Some system changes (kernel modules, sysctl, cgroup config) may require
+# a reboot to take full effect. If /var/run/reboot-required exists, reboot
+# the node, wait for it to come back, and verify system health.
+
+- name: Check if reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+
+- name: Display reboot requirement
+  ansible.builtin.debug:
+    msg: "Reboot required: {{ reboot_required.stat.exists | default(false) }}"
+
+- name: Reboot node if required
+  when: reboot_required.stat.exists
+  block:
+    - name: Flush handlers before reboot
+      ansible.builtin.meta: flush_handlers
+
+    - name: Reboot the node
+      ansible.builtin.reboot:
+        reboot_timeout: 180
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
+        connect_timeout: 60
+
+    - name: Wait for node to be reachable after reboot
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 180
+
+    - name: Gather fresh facts after reboot
+      ansible.builtin.setup:
+
+    - name: Print system health status
+      ansible.builtin.debug:
+        msg:
+          - "=== System Health: {{ inventory_hostname }} ({{ ansible_host }}) ==="
+          - "Hostname: {{ ansible_hostname }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "Uptime: {{ ansible_uptime_seconds | default('N/A') }} seconds"
+          - "Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CPU cores: {{ ansible_processor_cores }}"
+          - "Memory total: {{ (ansible_memtotal_mb | default(0)) | int }} MB"
+          - "Memory free: {{ (ansible_memfree_mb | default(0)) | int }} MB"
+          - "Disk root total: {{ ansible_devices | default({}) | length }} devices"
+          - "Default interface: {{ ansible_default_ipv4.interface | default('N/A') }}"
+          - "IP address: {{ ansible_default_ipv4.address | default('N/A') }}"
+          - "Reboot required file: {{ reboot_required.stat.exists | default(false) }} (should be false after reboot)"
+
+  rescue:
+    - name: Reboot or health check failed
+      ansible.builtin.fail:
+        msg: >-
+          Failed to reboot or verify health on {{ inventory_hostname }}
+          ({{ ansible_host }}). Check console for details.
+
+- name: Print system health status (no reboot needed)
+  when: not reboot_required.stat.exists
+  ansible.builtin.debug:
+    msg:
+      - "=== System Health: {{ inventory_hostname }} ({{ ansible_host }}) ==="
+      - "Hostname: {{ ansible_hostname }}"
+      - "Kernel: {{ ansible_kernel }}"
+      - "Uptime: {{ ansible_uptime_seconds | default('N/A') }} seconds"
+      - "Distribution: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+      - "CPU cores: {{ ansible_processor_cores }}"
+      - "Memory total: {{ (ansible_memtotal_mb | default(0)) | int }} MB"
+      - "Memory free: {{ (ansible_memfree_mb | default(0)) | int }} MB"
+      - "Default interface: {{ ansible_default_ipv4.interface | default('N/A') }}"
+      - "IP address: {{ ansible_default_ipv4.address | default('N/A') }}"

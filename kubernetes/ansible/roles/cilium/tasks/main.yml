@@ -16,19 +16,20 @@
 
 - name: Install Cilium with eBPF support
   shell: |
-    cilium install --version 1.15 \
-      --config enable-endpoint-routes=true \
-      --config enable-local-node-route=false \
-      --config enable-host-reachable-services=true \
-      --config enable-ipv4-masquerade=false \
-      --config enable-bpf-tproxy=true
+    export KUBECONFIG=/root/.kube/config
+    cilium install \
+      --set=enable-endpoint-routes=true \
+      --set=enable-local-node-route=false \
+      --set=enable-host-reachable-services=true \
+      --set=enable-ipv4-masquerade=false \
+      --set=enable-bpf-tproxy=true
   args:
     creates: /var/run/cilium/cilium.sock
   register: cilium_install
   # This may fail if already installed, which is fine
 
 - name: Wait for Cilium to be ready
-  shell: "cilium status --wait"
+  shell: "KUBECONFIG=/root/.kube/config cilium status --wait"
   register: cilium_status
   retries: 30
   delay: 10

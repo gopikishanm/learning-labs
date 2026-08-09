@@ -7,6 +7,116 @@
     - /etc/rancher/k3s
     - /root/.kube
 
+# Clean up any partial/broken k3s state from a previous failed install
+# (e.g., the old --server LB bootstrap issue or mismatched config).
+# On cp-1: only cleans up if service is in failed state.
+# On cp-2/cp-3: cleans up if k3s service exists in any state, ensuring a clean join.
+- name: Clean up broken k3s state on first control plane node
+  when: ansible_hostname == groups['control_plane'][0]
+  block:
+    - name: Check if k3s service exists
+      command: systemctl cat k3s.service
+      register: k3s_service_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if k3s service is active
+      command: systemctl is-active k3s.service
+      register: k3s_service_active
+      failed_when: false
+      changed_when: false
+      when: k3s_service_check.rc == 0
+
+    - name: Stop and disable k3s service (only if not active)
+      systemd:
+        name: k3s.service
+        state: stopped
+        enabled: no
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Remove k3s binary and data dirs (only if not active)
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s
+        - /var/lib/rancher/k3s
+        - /etc/rancher/k3s
+        - /root/.kube
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Remove k3s systemd service file (only if not active)
+      file:
+        path: /etc/systemd/system/k3s.service
+        state: absent
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+- name: Clean up k3s state on additional control plane nodes (ensures clean join)
+  when: ansible_hostname in groups['control_plane'] and ansible_hostname != groups['control_plane'][0]
+  block:
+    - name: Check if k3s service unit exists on additional node
+      command: systemctl cat k3s.service
+      register: k3s_service_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if k3s service is running
+      command: systemctl is-active k3s.service
+      register: k3s_service_active
+      failed_when: false
+      changed_when: false
+      when: k3s_service_check.rc == 0
+
+    - name: Stop and disable k3s service
+      systemd:
+        name: k3s.service
+        state: stopped
+        enabled: no
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Remove k3s binary and data dirs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s
+        - /var/lib/rancher/k3s
+        - /etc/rancher/k3s
+        - /root/.kube
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Remove k3s systemd service file
+      file:
+        path: /etc/systemd/system/k3s.service
+        state: absent
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
 # Fix: 'k3s_token is undefined' — group_vars/all.yml was not being loaded because
 # group_vars/ must be inside the inventory directory (inventory/group_vars/), not at
 # the ansible root level. Ansible resolves group_vars relative to the inventory file.
@@ -15,13 +125,13 @@
     curl -sfL https://get.k3s.io |
     K3S_TOKEN={{ k3s_token }}
     sh -s - --cluster-init
-    --server https://{{ load_balancer_vip }}:6443
     --write-kubeconfig /root/.kube/config
     --node-name {{ ansible_hostname }}
+    --tls-san {{ load_balancer_vip }}
     --flannel-backend=none
     --disable-network-policy
   args:
-    creates: /etc/rancher/k3s/token
+    creates: /usr/local/bin/k3s
   when: "ansible_hostname == groups['control_plane'][0]"
 
 - name: Wait for first control plane to be ready
@@ -33,7 +143,7 @@
   when: "ansible_hostname == groups['control_plane'][0]"
 
 - name: Get k3s token from first control plane node
-  command: "cat /etc/rancher/k3s/token"
+  command: "cat /var/lib/rancher/k3s/server/token"
   register: k3s_token_output
   when: "ansible_hostname == groups['control_plane'][0]"
 
@@ -53,16 +163,19 @@
     K3S_TOKEN={{ k3s_token }}
     sh -s - --server https://{{ load_balancer_vip }}:6443
     --node-name {{ ansible_hostname }}
+    --tls-san {{ load_balancer_vip }}
+    --flannel-backend=none
+    --disable-network-policy
   args:
-    creates: /etc/rancher/k3s/token
+    creates: /usr/local/bin/k3s
   when: "ansible_hostname in groups['control_plane'] and ansible_hostname != groups['control_plane'][0]"
 
 - name: Install k3s on worker nodes
   shell: >
     curl -sfL https://get.k3s.io |
     K3S_TOKEN={{ k3s_token }}
-    sh -s - --server https://{{ load_balancer_vip }}:6443
-    --node-name {{ ansible_hostname }} --worker
+    sh -s - agent --server https://{{ load_balancer_vip }}:6443
+    --node-name {{ ansible_hostname }}
   args:
-    creates: /etc/rancher/k3s/token
+    creates: /usr/local/bin/k3s
   when: "ansible_hostname in groups['worker']"
