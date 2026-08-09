@@ -244,6 +244,10 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=secret-token sh -s - agent \
   - `enable-host-reachable-services=true`
   - `enable-ipv4-masquerade=false`
   - `enable-bpf-tproxy=true`
+  - `k8sServiceHost={{ load_balancer_vip }}` — **critical for worker nodes** (Cilium agents default to `127.0.0.1:6443` which only works on CP nodes)
+  - `k8sServicePort=6443`
+- If Cilium is already installed, runs `cilium upgrade` to apply any new settings
+- Restarts Cilium DaemonSet pods to pick up config changes
 - Waits for Cilium to become ready (polling up to 5 minutes)
 - Automatically replaces kube-proxy (k3s was installed with `--disable-network-policy`)
 
@@ -469,6 +473,28 @@ unknown flag: --config
 
 **Fix (in `roles/cilium/tasks/main.yml`):**
 - Added `export KUBECONFIG=/root/.kube/config` before every `cilium` command
+
+### 13. Cilium Worker Pod Stuck in Init — Wrong API Server Endpoint
+
+**Symptom:** Cilium pod on worker nodes stuck at `Init:0/6` with:
+```
+level=error msg="Unable to contact k8s api-server" ipAddr=https://127.0.0.1:6443
+error="dial tcp 127.0.0.1:6443: connect: connection refused"
+```
+
+**Root Cause:** Cilium agents default to connecting to the API server at `127.0.0.1:6443`. This works on control plane nodes (where k3s server runs locally) but fails on worker nodes. Workers need to connect through the load balancer.
+
+**Fix (in `roles/cilium/tasks/main.yml`):**
+- Added `--set=k8sServiceHost={{ load_balancer_vip }}` and `--set=k8sServicePort=6443` to both `cilium install` and `cilium upgrade` commands
+- Added `cilium upgrade` task that runs unconditionally (handles the case where Cilium was already installed without these settings)
+- Added `kubectl delete pod` restart step to force Cilium DaemonSet pods to pick up the new config
+
+**Verification:**
+```bash
+kubectl describe configmap -n kube-system cilium-config | grep k8s
+# Expected: k8s-service-host: 192.168.1.160
+# Expected: k8s-service-port: 6443
+```
 
 ---
 

@@ -117,6 +117,78 @@
         - k3s_service_check.rc == 0
         - k3s_service_active.stdout != 'active'
 
+- name: Clean up k3s state on worker nodes (ensures clean join)
+  when: ansible_hostname in groups['worker']
+  block:
+    - name: Check if k3s service unit exists on worker (server or agent)
+      command: systemctl cat k3s.service
+      register: k3s_service_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if k3s-agent service unit exists on worker
+      command: systemctl cat k3s-agent.service
+      register: k3s_agent_service_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if k3s service is running
+      command: systemctl is-active k3s.service
+      register: k3s_service_active
+      failed_when: false
+      changed_when: false
+      when: k3s_service_check.rc == 0
+
+    - name: Check if k3s-agent service is running
+      command: systemctl is-active k3s-agent.service
+      register: k3s_agent_service_active
+      failed_when: false
+      changed_when: false
+      when: k3s_agent_service_check.rc == 0
+
+    - name: Stop and disable old k3s service (server mode)
+      systemd:
+        name: k3s.service
+        state: stopped
+        enabled: no
+      when:
+        - k3s_service_check.rc == 0
+        - k3s_service_active.stdout != 'active'
+
+    - name: Stop and disable k3s-agent service
+      systemd:
+        name: k3s-agent.service
+        state: stopped
+        enabled: no
+      when:
+        - k3s_agent_service_check.rc == 0
+        - k3s_agent_service_active.stdout != 'active'
+
+    - name: Remove k3s binary and data dirs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s
+        - /var/lib/rancher/k3s
+        - /etc/rancher/k3s
+        - /root/.kube
+      when: k3s_service_check.rc == 0 or k3s_agent_service_check.rc == 0
+
+    - name: Remove k3s systemd service files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/k3s.service
+        - /etc/systemd/system/k3s-agent.service
+      when: k3s_service_check.rc == 0 or k3s_agent_service_check.rc == 0
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+      when: k3s_service_check.rc == 0 or k3s_agent_service_check.rc == 0
+
 # Fix: 'k3s_token is undefined' — group_vars/all.yml was not being loaded because
 # group_vars/ must be inside the inventory directory (inventory/group_vars/), not at
 # the ansible root level. Ansible resolves group_vars relative to the inventory file.
@@ -152,10 +224,10 @@
     k3s_token: "{{ k3s_token_output.stdout }}"
   when: "ansible_hostname == groups['control_plane'][0]"
 
-- name: Store k3s token for other nodes
+- name: Store k3s token for other nodes (only CP nodes need it from hostvars)
   set_fact:
     k3s_token: "{{ hostvars[groups['control_plane'][0]].k3s_token_output.stdout }}"
-  when: "ansible_hostname != groups['control_plane'][0]"
+  when: "ansible_hostname in groups['control_plane'] and ansible_hostname != groups['control_plane'][0]"
 
 - name: Install k3s on additional control plane nodes (join)
   shell: >

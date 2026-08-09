@@ -22,11 +22,36 @@
       --set=enable-local-node-route=false \
       --set=enable-host-reachable-services=true \
       --set=enable-ipv4-masquerade=false \
-      --set=enable-bpf-tproxy=true
+      --set=enable-bpf-tproxy=true \
+      --set=k8sServiceHost={{ load_balancer_vip }} \
+      --set=k8sServicePort=6443
   args:
     creates: /var/run/cilium/cilium.sock
   register: cilium_install
-  # This may fail if already installed, which is fine
+  failed_when: false
+
+- name: Upgrade Cilium with LB config (if already installed)
+  shell: |
+    export KUBECONFIG=/root/.kube/config
+    cilium upgrade \
+      --set=enable-endpoint-routes=true \
+      --set=enable-local-node-route=false \
+      --set=enable-host-reachable-services=true \
+      --set=enable-ipv4-masquerade=false \
+      --set=enable-bpf-tproxy=true \
+      --set=k8sServiceHost={{ load_balancer_vip }} \
+      --set=k8sServicePort=6443
+  register: cilium_upgrade
+  failed_when: false
+  changed_when: cilium_upgrade.rc == 0
+
+- name: Restart Cilium pods to pick up new config
+  shell: |
+    export KUBECONFIG=/root/.kube/config
+    kubectl delete pod -n kube-system -l k8s-app=cilium --force --grace-period=0
+  register: cilium_restart
+  failed_when: false
+  changed_when: cilium_restart.rc == 0
 
 - name: Wait for Cilium to be ready
   shell: "KUBECONFIG=/root/.kube/config cilium status --wait"
