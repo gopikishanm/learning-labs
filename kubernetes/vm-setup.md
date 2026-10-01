@@ -118,10 +118,11 @@ $ ansible-playbook -i inventory/hosts.ini playbooks/k8s-setup.yml --private-key=
 
 ```sh
 k3s kubectl get nodes
-NAME       STATUS   ROLES                AGE     VERSION
-k3s-cp-1   Ready    control-plane,etcd   11m     v1.36.3+k3s1
-k3s-cp-2   Ready    control-plane,etcd   7m43s   v1.36.3+k3s1
-k3s-cp-3   Ready    control-plane,etcd   7m12s   v1.36.3+k3s1
+NAME           STATUS   ROLES                AGE   VERSION
+k3s-cp-1       Ready    control-plane,etcd   70m   v1.36.3+k3s1
+k3s-cp-2       Ready    control-plane,etcd   66m   v1.36.3+k3s1
+k3s-cp-3       Ready    control-plane,etcd   66m   v1.36.3+k3s1
+k3s-worker-1   Ready    <none>               43m   v1.36.3+k3s1
 ```
 
 ### Drop Infra
@@ -130,6 +131,7 @@ k3s-cp-3   Ready    control-plane,etcd   7m12s   v1.36.3+k3s1
 qm stop 300 && qm destroy 300 # Destroy cp-1 
 qm stop 301 && qm destroy 301 # Destroy cp-2
 qm stop 302 && qm destroy 302 # Destroy cp-3 
+qm stop 305 && qm destroy 305 # Destroy cp-3 
 qm stop 400 && qm destroy 400
 
 qm destroy 9000 # Destroy template
