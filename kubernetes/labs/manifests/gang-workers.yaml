@@ -1,0 +1,64 @@
+# gang-workers.yaml — Lab B1 (Pods that join the PodGroup)
+#
+# Each Pod joins the gang via spec.schedulingGroup.podGroupName.
+# With the gang policy (minCount: 3), the scheduler places ALL 3 or NONE.
+#
+# Apply AFTER workload-podgroup.yaml:
+#   kubectl apply -f kubernetes/labs/manifests/gang-workers.yaml
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+# (none yet — fill in as we apply)
+# ============================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-1
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-2
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-3
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"

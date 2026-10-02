@@ -1,0 +1,29 @@
+# pvc-unused.yaml — Lab B3 (PersistentVolumeClaimUnusedSinceTime, Alpha 1.36)
+#
+# The PVC protection controller adds an `Unused` condition to PVCs that tracks
+# whether the PVC is currently referenced by any non-terminal Pod. The
+# condition's lastTransitionTime records when the PVC last transitioned between
+# being in use and being unused.
+#
+# Requires featureGates: PersistentVolumeClaimUnusedSinceTime=true
+# (set in kind-v1.36-alpha-cluster.yaml).
+#
+# Apply:
+#   kubectl apply -f kubernetes/labs/manifests/pvc-unused.yaml
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+# (none yet — fill in as we apply)
+# ============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: unused-demo
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

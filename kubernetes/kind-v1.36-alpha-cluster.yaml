@@ -1,0 +1,139 @@
+# kind cluster: Kubernetes v1.36 with ALPHA feature gates — Phase 2 labs
+#
+# This is a SEPARATE cluster from k8s-136 (Phase 1). Feature gates are immutable
+# after creation, so Phase 2 needs its own cluster.
+#
+# Create with:
+#   kind create cluster --name k8s-136-alpha --config kubernetes/kind-v1.36-alpha-cluster.yaml
+#
+# MEMORY: this is a full 1 CP + 3 worker cluster (~19 GB), matching Phase 1.
+# Delete the Phase 1 cluster first (kind delete cluster --name k8s-136) so both
+# do not run at the same time.
+#
+# See kubernetes/labs/phase-b-alpha-feature-gates.md for the labs.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8s-136-alpha
+
+# ---------------------------------------------------------------------------
+# Cluster-wide feature gates (applied to every component that supports them).
+# All of these are ALPHA in Kubernetes 1.36 (disabled by default).
+# ---------------------------------------------------------------------------
+featureGates:
+  # --- B1: Workload / PodGroup gang scheduling -----------------------------
+  # GenericWorkload enables the Workload + PodGroup APIs
+  # (scheduling.k8s.io/v1alpha2) used for gang scheduling.
+  GenericWorkload: true
+  # TopologyAwareWorkloadScheduling adds placement-based PodGroup scheduling.
+  TopologyAwareWorkloadScheduling: true
+
+  # --- B2: Native histograms ----------------------------------------------
+  # Exposes Prometheus native histogram format from k8s components.
+  NativeHistograms: true
+
+  # --- B3: PVC unused-since-time ------------------------------------------
+  # Adds an `Unused` condition to PVCs tracking whether any non-terminal Pod
+  # references them.
+  PersistentVolumeClaimUnusedSinceTime: true
+
+  # --- B4: Memory QoS ------------------------------------------------------
+  # cgroup v2 memory protection/throttling. Also needs kubelet config
+  # (memoryReservationPolicy / memoryThrottlingFactor) — see below.
+  MemoryQoS: true
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Control plane
+  # ---------------------------------------------------------------------------
+  - role: control-plane
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 8443
+        protocol: TCP
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=500m,memory=1Gi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+      # Register the ALPHA API group on the kube-apiserver. Enabling the
+      # GenericWorkload feature gate is NOT enough — alpha API groups are
+      # disabled by default and must be turned on with --runtime-config.
+      # Without this, kube-scheduler logs:
+      #   failed to list *v1alpha2.PodGroup: the server could not find the requested resource
+      # and the whole cluster stays NotReady (CNI never schedules).
+      - |
+        kind: ClusterConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        apiServer:
+          extraArgs:
+            - name: runtime-config
+              value: "scheduling.k8s.io/v1alpha2=true"
+      # KubeletConfiguration: NodeLogQuery (Phase 1 A5) + Memory QoS (Phase 2 B4).
+      # kubeadm only reads KubeletConfiguration from the first node, so this
+      # applies cluster-wide.
+      - |
+        kind: KubeletConfiguration
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        enableSystemLogQuery: true
+        # Memory QoS: throttle Burstable/BestEffort containers at memory.high,
+        # and apply tiered memory.min/memory.low protection.
+        memoryThrottlingFactor: 0.9
+        memoryReservationPolicy: TieredReservation
+
+  # ---------------------------------------------------------------------------
+  # Worker 1
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 2
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 3
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"

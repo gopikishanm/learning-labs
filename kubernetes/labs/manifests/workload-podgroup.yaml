@@ -1,0 +1,143 @@
+# workload-podgroup.yaml — Lab B1 (Workload + PodGroup gang scheduling)
+#
+# Kubernetes 1.36, API group scheduling.k8s.io/v1alpha2 (ALPHA).
+#
+# Requires BOTH:
+#   1. featureGates: GenericWorkload=true  (set in kind-v1.36-alpha-cluster.yaml)
+#   2. apiserver --runtime-config=scheduling.k8s.io/v1alpha2=true
+#      (set via the ClusterConfiguration patch in the same file)
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+#
+# ERROR 1:
+#   Error from server (BadRequest): error when creating
+#   "kubernetes/labs/manifests/workload-podgroup.yaml": PodGroup in version
+#   "v1alpha2" cannot be handled as a PodGroup: strict decoding error:
+#   unknown field "spec.podGroupTemplateRef.podGroupTemplate",
+#   unknown field "spec.podGroupTemplateRef.workload.name"
+#
+#   CAUSE: The v1alpha2 PodGroupTemplateReference uses DIFFERENT field names than
+#          the v1beta1 docs show. In v1alpha2 the nested fields are
+#          `workloadName` and `podGroupTemplateName` (flat), NOT
+#          `workload.name` / `podGroupTemplate.name`.
+#
+#   FIX:   Use the v1alpha2 field names.
+#
+#   BEFORE:
+#     podGroupTemplateRef:
+#       workload:
+#         name: gang-demo              # <-- wrong (v1beta1 style)
+#       podGroupTemplate:
+#         name: workers                # <-- wrong (v1beta1 style)
+#
+#   AFTER:
+#     podGroupTemplateRef:
+#       workload:
+#         workloadName: gang-demo      # <-- v1alpha2
+#         podGroupTemplateName: workers # <-- v1alpha2
+#
+# ============================================================================
+
+# A Workload is a long-lived policy template. It defines the scheduling policy
+# (here: gang) that applies to a group of Pods. It does NOT track runtime state.
+apiVersion: scheduling.k8s.io/v1alpha2
+kind: Workload
+metadata:
+  name: gang-demo
+  namespace: default
+spec:
+  podGroupTemplates:
+    - name: workers
+      schedulingPolicy:
+        gang:
+          # The gang is schedulable only if 3 Pods can run at once.
+          minCount: 3
+---
+# A PodGroup is the runtime counterpart. A controller (or us, manually) creates
+# it from a Workload's PodGroupTemplate. It carries the policy + scheduling status.
+apiVersion: scheduling.k8s.io/v1alpha2
+kind: PodGroup
+metadata:
+  name: gang-demo-workers
+  namespace: default
+spec:
+  podGroupTemplateRef:
+    workload:
+      workloadName: gang-demo
+      podGroupTemplateName: workers
+  schedulingPolicy:
+    gang:
+      minCount: 3
+
+# ============================================================================
+# REAL-WORLD EXAMPLE — distributed training (all-or-nothing gang scheduling)
+# ============================================================================
+# A distributed ML training job (PyTorch DDP / Horovod / MPI) runs as N worker
+# Pods that must ALL run at once to make progress. Without gang scheduling the
+# scheduler places Pods one-by-one, so on a busy cluster you get a partial
+# placement (e.g. 6 of 8 workers) and the job hangs half-scheduled — burning
+# expensive GPU time on idle workers.
+#
+# With a PodGroup + gang policy, the scheduler places ALL 8 or NONE. If the
+# cluster can't fit all 8 right now, all 8 stay Pending until capacity frees up.
+#
+# ---
+# apiVersion: scheduling.k8s.io/v1alpha2
+# kind: Workload
+# metadata:
+#   name: pytorch-ddp
+#   namespace: ml
+# spec:
+#   controllerRef:                 # optional: links back to the owning Job
+#     apiGroup: batch
+#     kind: Job
+#     name: pytorch-ddp
+#   podGroupTemplates:
+#     - name: workers
+#       schedulingPolicy:
+#         gang:
+#           minCount: 8            # all 8 workers must be schedulable together
+# ---
+# apiVersion: scheduling.k8s.io/v1alpha2
+# kind: PodGroup
+# metadata:
+#   name: pytorch-ddp-workers
+#   namespace: ml
+# spec:
+#   podGroupTemplateRef:
+#     workload:
+#       workloadName: pytorch-ddp
+#       podGroupTemplateName: workers
+#   schedulingPolicy:
+#     gang:
+#       minCount: 8
+# ---
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   name: pytorch-ddp-worker-0
+#   namespace: ml
+# spec:
+#   schedulingGroup:
+#     podGroupName: pytorch-ddp-workers
+#   containers:
+#     - name: trainer
+#       image: pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+#       command: ["torchrun", "--nnodes=8", "--nproc_per_node=1", "train.py"]
+#       resources:
+#         limits:
+#           nvidia.com/gpu: 1
+#
+# Behaviour:
+#   8 GPUs free            -> all 8 Running, PodGroupInitiallyScheduled=True
+#   6 GPUs free            -> all 8 Pending (no partial gang)
+#   6 free, then 2 more    -> all 8 schedule together at once
+#
+# Related (1.36+):
+#   WorkloadWithJob (Alpha 1.36) - Job controller auto-creates Workload+PodGroup
+#     from a Job's .spec.scheduling, so you don't create them by hand.
+#   TopologyAwareWorkloadScheduling (Alpha 1.36) - placement constraints so the
+#     gang lands on nodes that are close together (same rack / fabric).
+# ============================================================================
