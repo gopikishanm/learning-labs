@@ -112,6 +112,9 @@ One `kubeletplugin` pod per worker, one `ResourceSlice` per node, and a
 
 **Apply — a ResourceClaimTemplate + Pod:**
 
+<details>
+<summary>📄 <code>manifests/dra-claim.yaml</code></summary>
+
 ```yaml
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
@@ -142,6 +145,8 @@ spec:
         claims:
           - name: gpu
 ```
+
+</details>
 
 **Observe — allocation:**
 
@@ -406,9 +411,73 @@ are immutable.
 - Only `admissionregistration.k8s.io/v1` is supported.
 
 **Files created for this lab:**
-- `manifests/static-admission/admission-configuration.yaml` — the `AdmissionConfiguration`
-- `manifests/static-admission/policies/deny-privileged.yaml` — a static CEL policy
-  that denies privileged containers outside `kube-system`
+
+<details>
+<summary>📄 <code>manifests/static-admission/admission-configuration.yaml</code></summary>
+
+```yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: ValidatingAdmissionPolicy
+    configuration:
+      apiVersion: apiserver.config.k8s.io/v1
+      kind: ValidatingAdmissionPolicyConfiguration
+      staticManifestsDir: "/etc/kubernetes/admission/policies/"
+```
+
+</details>
+
+<details>
+<summary>📄 <code>manifests/static-admission/policies/deny-privileged.yaml</code></summary>
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: "example-deny-privileged.static.k8s.io"
+  annotations:
+    kubernetes.io/description: "Deny privileged containers outside kube-system"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    - name: allContainers
+      expression: >-
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+  validations:
+    - expression: >-
+        !variables.allContainers.exists(c,
+        has(c.securityContext) && has(c.securityContext.privileged) &&
+        c.securityContext.privileged == true)
+      message: "Privileged containers are not allowed"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: "example-deny-privileged-binding.static.k8s.io"
+  annotations:
+    kubernetes.io/description: "Bind deny-privileged policy to all namespaces except kube-system"
+spec:
+  policyName: "example-deny-privileged.static.k8s.io"
+  validationActions:
+    - Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: "kubernetes.io/metadata.name"
+          operator: NotIn
+          values: ["kube-system"]
+```
+
+</details>
 
 **Create the C3 cluster** (delete the alpha cluster first to free memory):
 

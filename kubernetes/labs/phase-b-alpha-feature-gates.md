@@ -115,17 +115,21 @@ kubectl api-resources | grep -i -E "workload|podgroup"
 requirements. With `GenericWorkload` + `TopologyAwareWorkloadScheduling`, the
 scheduler can place a whole group of Pods **all-or-nothing** (gang scheduling).
 
-**Apply** — `manifests/workload-podgroup.yaml` (to be written):
+**Apply** — `manifests/workload-podgroup.yaml`:
+
+<details>
+<summary>📄 <code>manifests/workload-podgroup.yaml</code></summary>
 
 ```yaml
 apiVersion: scheduling.k8s.io/v1alpha2
 kind: Workload
 metadata:
   name: gang-demo
+  namespace: default
 spec:
-  podGroups:
+  podGroupTemplates:
     - name: workers
-      policy:
+      schedulingPolicy:
         gang:
           minCount: 3
 ---
@@ -133,12 +137,18 @@ apiVersion: scheduling.k8s.io/v1alpha2
 kind: PodGroup
 metadata:
   name: gang-demo-workers
+  namespace: default
 spec:
   podGroupTemplateRef:
     workload:
       workloadName: gang-demo
       podGroupTemplateName: workers
+  schedulingPolicy:
+    gang:
+      minCount: 3
 ```
+
+</details>
 
 **Observe** — create 3 Pods referencing the PodGroup; all 3 schedule together or
 none do. Scale the group beyond available capacity and watch them stay `Pending`
@@ -185,6 +195,64 @@ than the v1beta1 docs show. In v1alpha2 the nested fields are flat:
 
 **Apply the worker Pods** — `manifests/gang-workers.yaml` (3 Pods, each joining
 the group via `spec.schedulingGroup.podGroupName`):
+
+<details>
+<summary>📄 <code>manifests/gang-workers.yaml</code></summary>
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-1
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-2
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-worker-3
+  namespace: default
+spec:
+  schedulingGroup:
+    podGroupName: gang-demo-workers
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+```
+
+</details>
 
 ```sh
 kubectl apply -f kubernetes/labs/manifests/gang-workers.yaml
@@ -428,6 +496,9 @@ KubeletConfiguration file, so they do not appear in flagz).
 
 **Apply** — `manifests/pvc-unused.yaml`:
 
+<details>
+<summary>📄 <code>manifests/pvc-unused.yaml</code></summary>
+
 ```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -439,6 +510,8 @@ spec:
     requests:
       storage: 1Gi
 ```
+
+</details>
 
 **Observe — unused PVC**
 

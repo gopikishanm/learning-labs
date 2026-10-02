@@ -78,6 +78,28 @@ Each lab follows the same shape:
 
 Manifests live in [`manifests/`](./manifests/).
 
+### Inline manifests (collapsible)
+
+Each lab embeds its manifest **inline** in a collapsible `<details>` block, so you
+can read the YAML without leaving the doc:
+
+```markdown
+<details>
+<summary>📄 <code>manifests/example.yaml</code></summary>
+
+```yaml
+apiVersion: v1
+kind: Pod
+...
+```
+
+</details>
+```
+
+The block is collapsed by default (keeps the doc scannable) and expands on click.
+The canonical file still lives in [`manifests/`](./manifests/) — the inline copy is
+for convenience.
+
 ### Manifest error documentation convention
 
 When a manifest fails validation and is fixed, the **manifest itself** carries a

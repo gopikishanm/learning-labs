@@ -142,6 +142,9 @@ extra deployment.
 
 **Apply** — `manifests/mutating-admission-policy.yaml`:
 
+<details>
+<summary>📄 <code>manifests/mutating-admission-policy.yaml</code></summary>
+
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
@@ -174,6 +177,8 @@ spec:
   policyName: add-lab-label
   matchResources: {}
 ```
+
+</details>
 
 > **Gotcha (two errors hit while building this lab):**
 >
@@ -293,6 +298,9 @@ default**.
 
 **Apply** — `manifests/inplace-resize.yaml`:
 
+<details>
+<summary>📄 <code>manifests/inplace-resize.yaml</code></summary>
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -310,6 +318,8 @@ spec:
           cpu: "200m"
           memory: "128Mi"
 ```
+
+</details>
 
 ```sh
 kubectl apply -f kubernetes/labs/manifests/inplace-resize.yaml
@@ -367,6 +377,9 @@ containers in the pod when it exits with a matching code.
 
 **Apply** — `manifests/restart-all.yaml`:
 
+<details>
+<summary>📄 <code>manifests/restart-all.yaml</code></summary>
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -388,6 +401,8 @@ spec:
             operator: In
             values: [1]
 ```
+
+</details>
 
 > **Gotcha (two validation errors hit while building this lab):**
 >
@@ -733,6 +748,9 @@ contents directly as a volume.
 
 **Apply** — `manifests/image-volume.yaml`:
 
+<details>
+<summary>📄 <code>manifests/image-volume.yaml</code></summary>
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -752,6 +770,8 @@ spec:
         reference: busybox:1.36
         pullPolicy: IfNotPresent
 ```
+
+</details>
 
 ```sh
 kubectl apply -f manifests/image-volume.yaml
@@ -814,6 +834,9 @@ Volumes:
 
 **Apply** — `manifests/userns-procmount.yaml`:
 
+<details>
+<summary>📄 <code>manifests/userns-procmount.yaml</code></summary>
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -828,6 +851,8 @@ spec:
       securityContext:
         procMount: Unmasked  # ProcMountType
 ```
+
+</details>
 
 ```sh
 kubectl apply -f manifests/userns-procmount.yaml
