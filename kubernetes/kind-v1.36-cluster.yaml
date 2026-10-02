@@ -1,0 +1,118 @@
+# kind cluster: Kubernetes v1.36 — 1 control-plane + 3 workers
+#
+# Target host: macOS + Docker Desktop, ~20 GB usable RAM.
+# All kind nodes are Docker containers sharing the Docker Desktop VM's memory,
+# so the reservations below are deliberately modest to avoid overcommitting
+# the shared pool. See kubernetes/kind-v1.36-setup.md for the full walkthrough.
+#
+# Requires kind >= v0.32.0 (kubeadm v1beta4 support for Kubernetes 1.36+).
+# Create with:
+#   kind create cluster --name k8s-136 --config kubernetes/kind-v1.36-cluster.yaml
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8s-136
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Control plane
+  # ---------------------------------------------------------------------------
+  - role: control-plane
+    # Pin the Kubernetes version. v1.36.4 ships with kind v0.33.0.
+    # If you are on kind v0.32.0, use v1.36.1 instead:
+    #   kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    # Expose ingress-style ports on the host (optional, handy for later labs).
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 8443
+        protocol: TCP
+    # Kubernetes 1.36+ uses kubeadm v1beta4, where kubeletExtraArgs is a LIST.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=500m,memory=1Gi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+      # ----------------------------------------------------------------------
+      # Lab A5 — NodeLogQuery (GA in 1.36)
+      # ----------------------------------------------------------------------
+      # The NodeLogQuery feature gate being GA is NOT sufficient. The kubelet
+      # must also set `enableSystemLogQuery: true` in its KubeletConfiguration.
+      # Without it, the /logs/ endpoint ignores `?query=` and falls back to the
+      # legacy file-serving handler, returning an HTML directory listing of
+      # /var/log/ instead of log lines:
+      #
+      #   $ kubectl get --raw "/api/v1/nodes/k8s-136-worker/proxy/logs/?query=kubelet"
+      #   <!doctype html>
+      #   <pre>
+      #   <a href="alternatives.log">alternatives.log</a>
+      #   <a href="containers/">containers/</a>
+      #   <a href="pods/">pods/</a>
+      #   </pre>
+      #
+      # kind does not enable this by default. kubeadm only reads
+      # KubeletConfiguration from the FIRST node, so this patch applies
+      # cluster-wide (all nodes). Requires a cluster recreate to take effect.
+      #
+      # See kubernetes/labs/phase-a-ga-beta.md (Lab A5) for the full walkthrough.
+      # ----------------------------------------------------------------------
+      - |
+        kind: KubeletConfiguration
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        enableSystemLogQuery: true
+
+  # ---------------------------------------------------------------------------
+  # Worker 1
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 2
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 3
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"

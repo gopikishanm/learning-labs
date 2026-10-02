@@ -1,0 +1,76 @@
+# restart-all.yaml — Lab A4 (RestartAllContainersOnContainerExits, Beta in 1.36)
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+#
+# ERROR 1:
+#   The Pod "restart-all-demo" is invalid:
+#   * spec.containers[1].restartPolicy: Required value: must specify
+#     restartPolicy when restart rules are used
+#
+#   CAUSE: A container that declares `restartPolicyRules` must ALSO set its own
+#          `restartPolicy`. It does NOT inherit the pod-level `restartPolicy`.
+#
+#   FIX:   Add `restartPolicy: Always` to the sidecar container.
+#
+#   BEFORE:
+#     - name: sidecar
+#       image: busybox:1.36
+#       command: ["sh", "-c", "sleep 5; exit 1"]
+#       restartPolicyRules:            # <-- no restartPolicy on the container
+#         - action: RestartAllContainers
+#           exitCodes:
+#             values: [1]
+#
+#   AFTER:
+#     - name: sidecar
+#       image: busybox:1.36
+#       command: ["sh", "-c", "sleep 5; exit 1"]
+#       restartPolicy: Always          # <-- REQUIRED when restartPolicyRules used
+#       restartPolicyRules:
+#         - action: RestartAllContainers
+#           exitCodes:
+#             operator: In             # <-- see ERROR 2
+#             values: [1]
+#
+# ERROR 2:
+#   The Pod "restart-all-demo" is invalid:
+#   * spec.containers[1].restartPolicyRules[0].exitCodes.operator: Unsupported
+#     value: "": supported values: "In", "NotIn"
+#
+#   CAUSE: `exitCodes.operator` is a required field; it defaults to "" which is
+#          not a valid value.
+#
+#   FIX:   Set `operator: In` (match the listed codes) or `NotIn`.
+#
+#   BEFORE:
+#           exitCodes:
+#             values: [1]              # <-- operator missing
+#
+#   AFTER:
+#           exitCodes:
+#             operator: In             # <-- REQUIRED: In | NotIn
+#             values: [1]
+#
+# ============================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: restart-all-demo
+spec:
+  restartPolicy: Never
+  containers:
+    - name: main
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 3600"]
+    - name: sidecar
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep 5; exit 1"]
+      restartPolicy: Always
+      restartPolicyRules:
+        - action: RestartAllContainers
+          exitCodes:
+            operator: In
+            values: [1]

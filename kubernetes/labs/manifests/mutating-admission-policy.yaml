@@ -1,0 +1,86 @@
+# mutating-admission-policy.yaml — Lab A2 (MutatingAdmissionPolicy, GA v1 in 1.36)
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+#
+# ERROR 1:
+#   The MutatingAdmissionPolicy "add-lab-label" is invalid:
+#   * spec.mutations[0].applyConfiguration.expression: Invalid value:
+#     "Object.metadata.labels[\"mutated-by\"] = \"k8s-1.36-lab\"":
+#     compilation failed: ERROR: <input>:1:38: Syntax error: token recognition
+#     error at: '= '
+#
+#   CAUSE: CEL (Common Expression Language) is declarative — it has NO
+#          assignment operator. You cannot write `field = value`. You must
+#          CONSTRUCT an object that Kubernetes merges into the request.
+#
+#   FIX:   Use object-construction syntax instead of assignment.
+#
+#   BEFORE:
+#     expression: >
+#       Object.metadata.labels["mutated-by"] = "k8s-1.36-lab"
+#
+#   AFTER:
+#     expression: |
+#       Object{
+#         metadata: Object.metadata{
+#           labels: {"mutated-by": "k8s-1.36-lab"}
+#         }
+#       }
+#
+# ERROR 2:
+#   The MutatingAdmissionPolicy "add-lab-label" is invalid:
+#   * spec.reinvocationPolicy: Required value
+#
+#   CAUSE: `spec.reinvocationPolicy` is a required field in the v1 API.
+#
+#   FIX:   Set `reinvocationPolicy: Never` (or `IfNeeded`).
+#
+#   BEFORE:
+#     spec:
+#       failurePolicy: Fail
+#       matchConstraints:            # <-- reinvocationPolicy missing
+#
+#   AFTER:
+#     spec:
+#       failurePolicy: Fail
+#       reinvocationPolicy: Never    # <-- REQUIRED: Never | IfNeeded
+#       matchConstraints:
+#
+# NOTE: The binding is created BEFORE the policy is validated, so a failed apply
+#       can leave an orphan MutatingAdmissionPolicyBinding. Re-apply after fixing
+#       the policy (the binding will report "unchanged").
+#
+# ============================================================================
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: add-lab-label
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: |
+          Object{
+            metadata: Object.metadata{
+              labels: {"mutated-by": "k8s-1.36-lab"}
+            }
+          }
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: add-lab-label-binding
+spec:
+  policyName: add-lab-label
+  matchResources: {}
