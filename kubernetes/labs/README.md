@@ -9,6 +9,7 @@ Each phase has its **own document** so it can be resumed independently:
 |-------|----------|---------|-----|--------|
 | **1 (A)** | Nothing extra — features are GA or beta-on-by-default | `k8s-136` (existing) | [phase-a-ga-beta.md](./phase-a-ga-beta.md) | ✅ **Complete** |
 | **2 (B)** | Feature gates set at cluster creation | `k8s-136-alpha` (new) | [phase-b-alpha-feature-gates.md](./phase-b-alpha-feature-gates.md) | ✅ Complete |
+| **3 (C)** | Advanced / optional | `k8s-136-alpha` + `k8s-136-mac` (C3) | [phase-c-advanced.md](./phase-c-advanced.md) | ✅ Complete |
 | **3 (C)** | Extra components / advanced setup | `k8s-136` or alpha | [phase-c-advanced.md](./phase-c-advanced.md) | ⏳ Not started |
 
 > **Why separate phases?** Feature gates are immutable after cluster creation.

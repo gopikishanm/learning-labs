@@ -1,0 +1,16 @@
+# admission-configuration.yaml — Phase 3 C3
+#
+# Passed to the kube-apiserver via --admission-control-config-file.
+# Points the ValidatingAdmissionPolicy plugin at a directory of static manifests
+# loaded from disk at startup (ManifestBasedAdmissionControlConfig, Alpha 1.36).
+#
+# NOTE: this file is mounted at /etc/kubernetes/admission/ inside the node, so
+# the staticManifestsDir path below is the IN-CONTAINER path.
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: ValidatingAdmissionPolicy
+    configuration:
+      apiVersion: apiserver.config.k8s.io/v1
+      kind: ValidatingAdmissionPolicyConfiguration
+      staticManifestsDir: "/etc/kubernetes/admission/policies/"

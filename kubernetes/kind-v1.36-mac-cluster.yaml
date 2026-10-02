@@ -1,0 +1,123 @@
+# kind cluster: Kubernetes v1.36 for Phase 3 C3 — ManifestBasedAdmissionControlConfig
+#
+# This is a SEPARATE cluster from k8s-136-alpha. The
+# ManifestBasedAdmissionControlConfig gate is ALPHA in 1.36 (disabled by default)
+# and feature gates are immutable, so C3 needs its own cluster.
+#
+# Create with:
+#   kind create cluster --name k8s-136-mac --config kubernetes/kind-v1.36-mac-cluster.yaml
+#
+# MEMORY: full 1 CP + 3 worker cluster (~19 GB). Delete k8s-136-alpha first:
+#   kind delete cluster --name k8s-136-alpha
+#
+# See kubernetes/labs/phase-c-advanced.md (C3) for the lab.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8s-136-mac
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Control plane
+  # ---------------------------------------------------------------------------
+  - role: control-plane
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 8443
+        protocol: TCP
+    # Mount the static admission manifests into the node so the apiserver can
+    # read them from disk. The host path is the repo's static-admission dir.
+    extraMounts:
+      - hostPath: /Users/gopikishanm/sc/learning/learning-labs/kubernetes/labs/manifests/static-admission
+        containerPath: /etc/kubernetes/admission
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=500m,memory=1Gi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+      # Enable the ALPHA gate on the kube-apiserver ONLY (it is apiserver-only;
+      # setting it cluster-wide would break controller-manager/scheduler/kubelet)
+      # and point the apiserver at the AdmissionConfiguration file.
+      #
+      # IMPORTANT: kubeadm only mounts a FIXED set of host paths into the
+      # kube-apiserver static pod. The admission dir must be added explicitly via
+      # extraVolumes, or the apiserver fails to start with:
+      #   failed to read admission control configuration from
+      #   "/etc/kubernetes/admission/admission-configuration.yaml" [no such file]
+      - |
+        kind: ClusterConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        apiServer:
+          extraArgs:
+            - name: feature-gates
+              value: "ManifestBasedAdmissionControlConfig=true"
+            - name: admission-control-config-file
+              value: "/etc/kubernetes/admission/admission-configuration.yaml"
+          extraVolumes:
+            - name: admission-config
+              hostPath: /etc/kubernetes/admission
+              mountPath: /etc/kubernetes/admission
+              readOnly: true
+              pathType: DirectoryOrCreate
+      - |
+        kind: KubeletConfiguration
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        enableSystemLogQuery: true
+
+  # ---------------------------------------------------------------------------
+  # Worker 1
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 2
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"
+
+  # ---------------------------------------------------------------------------
+  # Worker 3
+  # ---------------------------------------------------------------------------
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta4
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: system-reserved
+              value: "cpu=250m,memory=512Mi"
+            - name: eviction-hard
+              value: "memory.available<256Mi,nodefs.available<10%"

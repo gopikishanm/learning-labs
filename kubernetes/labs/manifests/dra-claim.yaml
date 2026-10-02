@@ -1,0 +1,49 @@
+# dra-claim.yaml — Lab C1 (Dynamic Resource Allocation, Stable in 1.36)
+#
+# A ResourceClaimTemplate + a Pod that consumes it. The DRA driver
+# (dra-example-driver) publishes mock GPU devices via ResourceSlices; the
+# scheduler allocates one to this claim.
+#
+# Requires:
+#   - resource.k8s.io/v1 (Stable in 1.36, always on)
+#   - a DRA driver installed (see phase-c-advanced.md C1)
+#
+# Apply:
+#   kubectl apply -f kubernetes/labs/manifests/dra-claim.yaml
+#
+# ============================================================================
+# ERRORS ENCOUNTERED AND FIXES
+# ============================================================================
+# (none yet — fill in as we apply)
+# ============================================================================
+
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: gpu-claim
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.example.com
+            count: 1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dra-demo
+  namespace: default
+spec:
+  resourceClaims:
+    - name: gpu
+      resourceClaimTemplateName: gpu-claim
+  containers:
+    - name: c
+      image: busybox:1.36
+      command: ["sh", "-c", "env | grep GPU_DEVICE; sleep 3600"]
+      resources:
+        claims:
+          - name: gpu
